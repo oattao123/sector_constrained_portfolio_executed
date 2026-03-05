@@ -1,27 +1,29 @@
 # 📊 Multi-Asset Sector-Constrained Portfolio Optimization
 
-> Mean-Variance Model (Markowitz 1952) with Real-World Constraints
+> Mean-Variance Model (Markowitz 1952) with Real-World Constraints & Advanced Optimizers
 
 ## Overview
 
-Portfolio optimization using the **Mean-Variance (M-V) Model** across **26 assets** in **9 groups**, with sector weight constraints, transaction costs, lot-size adjustments, short-sell analysis, and out-of-sample validation.
+Portfolio optimization across **30 assets** representing **10 groups (Asset Classes/Sectors)**, incorporating sector weight constraints, transaction costs, lot-size adjustments, short-sell analysis, and out-of-sample validation.
+
+This project goes beyond the standard SciPy SLSQP solver by introducing **Particle Swarm Optimization (PSO)** and **Differential Evolution (DE)** to overcome local optima and achieve a higher Sharpe ratio.
 
 ---
 
-## Assets (26 Tickers, 9 Groups)
+## Assets (30 Tickers, 10 Groups)
 
 | Group          | Tickers                       | Region |
 | -------------- | ----------------------------- | ------ |
-| US Technology  | AAPL, MSFT, NVDA, META        | 🇺🇸     |
+| US Technology  | AAPL, NVDA, META, AVGO, GOOGL | 🇺🇸     |
 | US Healthcare  | JNJ, ABBV, LLY                | 🇺🇸     |
-| US Financial   | JPM, GS                       | 🇺🇸     |
+| US Financial   | JPM, GS, V                    | 🇺🇸     |
 | US Energy      | XOM, MPC                      | 🇺🇸     |
-| US Consumer    | CAT, WMT                      | 🇺🇸     |
+| US Consumer    | CAT, WMT, COST, MCD           | 🇺🇸     |
 | Thai Stocks    | DELTA.BK, ADVANC.BK, KBANK.BK | 🇹🇭     |
-| Chinese Stocks | PDD, FUTU, ZTO                | 🇨🇳     |
+| Chinese Stocks | PDD, FUTU                     | 🇨🇳     |
 | Crypto         | BTC-USD, ETH-USD              | ₿      |
 | Bonds          | HYG, VCSH, EMLC               | 🌏     |
-| Commodities    | GLD, SLV                      | 🪙     |
+| Commodities    | GLD, SLV, COPX                | 🪙     |
 
 > All assets screened for **Sharpe Ratio > 0.5** (4-year lookback)
 
@@ -29,10 +31,10 @@ Portfolio optimization using the **Mean-Variance (M-V) Model** across **26 asset
 
 ## Workflow
 
-```
+```text
 Phase 1: DATA PREPARATION
-  ├── Install & Import (yfinance, pandas, numpy, scipy)
-  ├── Define 26 Assets (9 Groups)
+  ├── Install & Import (yfinance, pandas, numpy, scipy, pyswarm)
+  ├── Define 30 Assets (10 Groups)
   ├── Download 4-Year Price Data (yfinance API)
   ├── Currency Conversion → THB Base (USD/THB exchange rate)
   └── Calculate Returns & Correlation Matrix
@@ -51,69 +53,23 @@ Phase 3: CONSTRAINTS
 Phase 4: OPTIMIZATION
   ├── Risk-Free Rate (US 10Y Treasury, ~4.5%)
   ├── Sharpe Ratio = (E(Rp) - Rf) / σp
-  ├── SLSQP Solver (30 multi-start trials)
-  └── Output: Unconstrained vs Sector-Constrained weights
+  ├── 3 Optimizers Compared:
+  │    ├── 1. SLSQP Solver (Standard)
+  │    ├── 2. PSO Hybrid (Particle Swarm + SLSQP)
+  │    └── 3. DE Hybrid (Differential Evolution + SLSQP) 🏆
+  └── Output: Multi-optimizer comparison
 
 Phase 5: ANALYSIS
-  ├── Sector/Asset Weight Comparison
-  ├── Efficient Frontier (Constrained vs Unconstrained)
+  ├── Sector/Asset Weight Comparison across Optimizers
+  ├── Efficient Frontier (Optimizers mapped)
   └── Backtest (4 years)
 
 Phase 6: REAL-WORLD ADJUSTMENTS
   ├── Transaction Costs (0.20% per trade)
-  ├── Transaction Lots (Thai: 100/lot, US: 1 share)
+  ├── Transaction Lots (Thai: 100/lot, US: 1 share, Crypto: Fractions)
   ├── Short Sell with Leverage Constraint (1.0x–2.0x)
   └── Out-of-Sample Testing (Train 3yr / Test 1yr)
 ```
-
----
-
-## Key Results (4-Year Backtest)
-
-### Portfolio Performance
-
-| Portfolio              | Total Return | Annual Return | Annual Vol | Sharpe Ratio | Max Drawdown |
-| ---------------------- | ------------ | ------------- | ---------- | ------------ | ------------ |
-| Unconstrained          | +117.89%     | 21.38%        | 7.31%      | 2.92         | -7.91%       |
-| **Sector-Constrained** | **+168.32%** | **27.23%**    | **9.76%**  | **2.79**     | **-11.63%**  |
-| Equal Weight           | +221.23%     | 32.83%        | 15.42%     | 2.13         | -17.31%      |
-
-### Transaction Costs Impact
-
-| Portfolio     | Without TC | With TC  | TC Drag |
-| ------------- | ---------- | -------- | ------- |
-| Unconstrained | +117.61%   | +116.12% | -0.69%  |
-| Constrained   | +167.87%   | +165.17% | -1.01%  |
-
-> TC = Broker 0.10% + Tax 0.05% + Bid-Ask 0.05% = **0.20%/trade**, rebalance monthly
-
-### Out-of-Sample Validation
-
-| Period                   | Ann Return | Sharpe (Rf-adj) | Max DD  |
-| ------------------------ | ---------- | --------------- | ------- |
-| In-Sample (Train 3yr)    | 33.06%     | 2.226           | -12.54% |
-| Out-of-Sample (Test 1yr) | 41.42%     | 2.387           | -12.71% |
-
-```
-Sharpe degradation: -7.2% → GOOD (not overfitting)
-```
-
----
-
-## Sector Allocation (Constrained Portfolio)
-
-| Sector         | Weight | Limit     |
-| -------------- | ------ | --------- |
-| Thai Stocks    | 25.00% | 25% (max) |
-| Bonds          | 17.00% | 25%       |
-| US Healthcare  | 16.44% | 25%       |
-| Commodities    | 16.00% | 25%       |
-| US Consumer    | 11.46% | 25%       |
-| US Technology  | 4.59%  | 25%       |
-| US Energy      | 3.51%  | 25%       |
-| US Financial   | 2.00%  | 25%       |
-| Chinese Stocks | 2.00%  | 25%       |
-| Crypto         | 2.00%  | 25%       |
 
 ---
 
@@ -140,26 +96,25 @@ Sharpe degradation: -7.2% → GOOD (not overfitting)
 # Install uv (if not installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Run
+# Run notebook via uv
 cd /Users/oattao/Desktop/ci
-uv run jupyter notebook sector_constrained_portfolio.ipynb
+uv run jupyter notebook sector_constrained_portfolio_from_py.ipynb
 
-# Or execute all cells from CLI
-uv run jupyter nbconvert --execute sector_constrained_portfolio.ipynb
+# Or execute python script directly
+uv run python sector_constrained_portfolio_executed.py
 ```
 
 ---
 
 ## File Structure
 
-```
+```text
 ci/
-├── sector_constrained_portfolio.ipynb          # Source notebook
-├── sector_constrained_portfolio_executed.ipynb  # Executed (with outputs)
-├── portfolio_workflow.png                       # Workflow diagram
-├── README.md                                    # This file
 ├── pyproject.toml                               # uv dependencies
-└── uv.lock                                      # Lock file
+├── uv.lock                                      # Lock file
+├── README.md                                    # This file
+├── sector_constrained_portfolio_executed.py     # Main executable python script
+└── sector_constrained_portfolio_from_py.ipynb   # Generated Notebook
 ```
 
 ---
@@ -169,6 +124,5 @@ ci/
 - `yfinance` — Market data download
 - `pandas` / `numpy` — Data manipulation
 - `matplotlib` / `seaborn` — Visualization
-- `scipy` — SLSQP optimization solver
-- `jupyter` / `ipykernel` — Notebook runtime
-# sector_constrained_portfolio_executed
+- `scipy` — SLSQP and DE optimization solvers
+- `pyswarm` — Particle Swarm Optimization (PSO) solver
