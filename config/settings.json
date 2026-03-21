@@ -1,0 +1,27 @@
+{
+  "base_currency": "THB",
+  "random_seed": 42,
+  "data": {
+    "start_date": "2022-03-21",
+    "end_date": "2026-03-20"
+  },
+  "risk_free_rate": {
+    "ticker": "^TNX",
+    "fallback": 0.045
+  },
+  "portfolio": {
+    "value": 1000000
+  },
+  "currency": {
+    "fx_pairs": {
+      "USD": "USDTHB=X"
+    }
+  },
+  "quality_checks": {
+    "max_abs_daily_return": 0.25,
+    "max_annual_return": 1.5
+  },
+  "monte_carlo": {
+    "num_portfolios": 5000
+  }
+}

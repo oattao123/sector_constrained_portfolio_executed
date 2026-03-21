@@ -1,0 +1,31 @@
+Ticker,Sector,Currency,LotSize
+TIPS,Bonds,USD,1
+KTB.BK,Thai Stocks,THB,100
+TISCO.BK,Thai Stocks,THB,100
+TTB.BK,Thai Stocks,THB,100
+TCAP.BK,Thai Stocks,THB,100
+SCB.BK,Thai Stocks,THB,100
+FIX,Industrials,USD,1
+HWM,Industrials,USD,1
+EME,Industrials,USD,1
+GE,Industrials,USD,1
+PWR,Industrials,USD,1
+CAH,Health Care,USD,1
+MCK,Health Care,USD,1
+GILD,Health Care,USD,1
+COR,Health Care,USD,1
+VST,Utilities,USD,1
+CEG,Utilities,USD,1
+NRG,Utilities,USD,1
+WDC,Information Technology,USD,1
+PLTR,Information Technology,USD,1
+CIEN,Information Technology,USD,1
+STX,Information Technology,USD,1
+SMCI,Information Technology,USD,1
+GLW,Information Technology,USD,1
+APP,Information Technology,USD,1
+MU,Information Technology,USD,1
+CBOE,Financials,USD,1
+IBKR,Financials,USD,1
+TKO,Communication Services,USD,1
+TJX,Consumer Discretionary,USD,1
