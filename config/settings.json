@@ -2,8 +2,10 @@
   "base_currency": "THB",
   "random_seed": 42,
   "data": {
-    "start_date": "2022-03-21",
-    "end_date": "2026-03-20"
+    "start_date": "2015-01-01",
+    "end_date": "2026-03-20",
+    "insample_end_date": "2024-01-01",
+    "outsample_end_date": "2026-03-20"
   },
   "risk_free_rate": {
     "ticker": "^TNX",
