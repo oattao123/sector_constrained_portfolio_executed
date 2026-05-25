@@ -3,9 +3,11 @@ import logging
 import numpy as np
 import pandas as pd
 import torch
+import matplotlib
+matplotlib.use("Agg")  # force non-interactive backend
 import matplotlib.pyplot as plt
 from .covariance import get_best_device, to_tensor
-from .optimizers import optimize_weights_aco_ebgwo
+from .optimizers import optimize_weights_aco_ebgwo, optimize_weights_pso
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,9 @@ class WalkForwardBacktester:
         self.risk_free_rate = risk_free_rate
         self.device = get_best_device()
         
-    def run(self, portfolio_name, selected_stocks, lookback_window=252*3, step_size=21*3, 
-            num_iterations=1000, num_agents=500, use_sector_constraints=False, **optimizer_kwargs):
+    def run(self, portfolio_name, selected_stocks, lookback_window=252*3, step_size=21*3,
+            num_iterations=1000, num_agents=500, use_sector_constraints=False,
+            optimizer='aco_ebgwo', **optimizer_kwargs):
         """Runs rolling window Walk-Forward optimization."""
         logger.info(f"[{portfolio_name}] Starting Walk-Forward Backtest...")
         
@@ -87,16 +90,25 @@ class WalkForwardBacktester:
                 
             train_returns = returns_gpu_full[start_idx:train_end]
             
-            # Run ACO + EBGWO weight optimization
-            best_weights, conv_b, conv_a = optimize_weights_aco_ebgwo(
-                train_returns_gpu=train_returns,
-                target_assets=target_assets_count,
-                heuristic_tensor=None,
-                sector_labels=sector_labels_tensor,
-                num_iterations=num_iterations,
-                num_agents=num_agents,
-                **optimizer_kwargs
-            )
+            # Dispatch optimizer
+            if optimizer == 'pso':
+                best_weights, conv_b, conv_a = optimize_weights_pso(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            else:  # default: aco_ebgwo
+                best_weights, conv_b, conv_a = optimize_weights_aco_ebgwo(
+                    train_returns_gpu=train_returns,
+                    target_assets=target_assets_count,
+                    heuristic_tensor=None,
+                    sector_labels=sector_labels_tensor,
+                    num_iterations=num_iterations,
+                    num_agents=num_agents,
+                    **optimizer_kwargs
+                )
             
             all_best_conv.append(conv_b)
             all_avg_conv.append(conv_a)

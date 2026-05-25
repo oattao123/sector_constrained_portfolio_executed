@@ -4,6 +4,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import matplotlib
+matplotlib.use("Agg")  # force non-interactive backend; must precede mplfinance/pyplot import
 import mplfinance as mpf
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec

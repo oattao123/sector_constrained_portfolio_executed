@@ -5,6 +5,9 @@ import os
 import warnings
 from datetime import datetime
 
+import matplotlib
+matplotlib.use("Agg")  # force non-interactive backend before any other mpl import
+
 import numpy as np
 import pandas as pd
 import torch
@@ -16,6 +19,7 @@ from portfolio_optimization import (
     compute_correlation_matrix,
     compute_metrics,
     ledoit_wolf_covariance_gpu_dynamic,
+    optimize_weights_pso,
     print_asset_summary,
     print_backtest_table,
     print_selection_summary,
@@ -46,6 +50,7 @@ def parse_args():
     parser.add_argument("--wolves", type=int, default=500, help="Number of wolves for EBGWO")
     parser.add_argument("--iterations", type=int, default=1000, help="Number of iterations for optimizers")
     parser.add_argument("--agents", type=int, default=500, help="Number of agents for ACO")
+    parser.add_argument("--particles", type=int, default=500, help="Number of particles for PSO")
     return parser.parse_args()
 
 
@@ -231,8 +236,21 @@ def main():
         num_iterations=args.iterations,
         num_agents=args.wolves,
         use_sector_constraints=True,
+        optimizer='aco_ebgwo',
     )
     all_results.append(dynamic_res)
+
+    # C. Run PSO walk-forward optimization (Full Universe)
+    logger.info("Running PSO walk-forward optimization...")
+    pso_res = backtester.run(
+        portfolio_name="PSO Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='pso',
+    )
+    all_results.append(pso_res)
 
     # C. Calculate SPY Benchmark Metrics
     lookback_window = 252 * 3

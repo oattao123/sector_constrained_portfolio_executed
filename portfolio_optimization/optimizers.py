@@ -297,3 +297,113 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
         final_full_weights[global_best_portfolio] = global_best_weights
 
     return final_full_weights.cpu().numpy(), convergence_curve, avg_convergence_curve
+
+
+def optimize_weights_pso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
+                         num_particles=500, iterations=1000,
+                         w_start=0.9, w_end=0.4,
+                         c1=2.0, c2=2.0,
+                         return_convergence=False, **kwargs):
+    """
+    Particle Swarm Optimization (PSO) for portfolio weight allocation.
+
+    Maximizes entropy-regularized Sharpe Ratio using Ledoit-Wolf shrinkage
+    covariance. Inertia weight decays linearly from w_start → w_end to
+    balance exploration (early) vs exploitation (late).
+
+    Args:
+        train_returns_gpu : torch.Tensor  shape (T, N), daily returns on GPU
+        max_weight        : float         per-asset weight cap (soft penalty)
+        lambda_ent        : float         entropy regularization strength
+        num_particles     : int           swarm size
+        iterations        : int           number of PSO iterations
+        w_start           : float         initial inertia weight
+        w_end             : float         final inertia weight
+        c1                : float         cognitive coefficient (personal best)
+        c2                : float         social coefficient   (global best)
+        return_convergence: bool          if True also return convergence lists
+
+    Returns:
+        best_weights      : np.ndarray    shape (N,)
+        convergence_best  : list[float]   (only when return_convergence=True)
+        convergence_avg   : list[float]   (only when return_convergence=True)
+    """
+    num_days, num_assets = train_returns_gpu.shape
+    device = train_returns_gpu.device
+    RISK_FREE_RATE = 0.0434
+
+    log_n = math.log(num_assets) if num_assets > 1 else 1.0
+    eps = 1e-10
+
+    # ── Initialize positions (weights) & velocities ──────────────────────────
+    positions = torch.rand((num_particles, num_assets), dtype=torch.float32, device=device)
+    positions = positions / positions.sum(dim=1, keepdim=True)
+
+    velocities = torch.zeros_like(positions)
+
+    # Personal bests
+    pbest_positions = positions.clone()
+    pbest_fitness = torch.full((num_particles,), -float('inf'), dtype=torch.float32, device=device)
+
+    # Global best
+    gbest_position = positions[0].clone()
+    gbest_fitness = -float('inf')
+
+    convergence_best: list[float] = []
+    convergence_avg: list[float] = []
+
+    for iteration in range(iterations):
+        # ── Ledoit-Wolf shrinkage covariance ─────────────────────────────────
+        shrunk_cov, _, _ = ledoit_wolf_covariance_gpu_dynamic(train_returns_gpu)
+
+        # ── Fitness evaluation ────────────────────────────────────────────────
+        mean_returns = train_returns_gpu.mean(dim=0)                        # (N,)
+        port_ann_return = torch.matmul(positions, mean_returns) * 252       # (P,)
+
+        port_variance = torch.sum(positions * torch.matmul(positions, shrunk_cov), dim=1)
+        port_ann_vol = torch.sqrt(port_variance * 252).clamp(min=eps)      # (P,)
+
+        sharpe = (port_ann_return - RISK_FREE_RATE) / port_ann_vol         # (P,)
+
+        entropy = -torch.sum(positions * torch.log(positions + eps), dim=1)
+        norm_entropy = entropy / log_n                                      # (P,)
+
+        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * 100.0
+
+        fitness = sharpe + lambda_ent * norm_entropy - weight_penalty      # (P,)
+
+        # ── Update personal & global bests ───────────────────────────────────
+        improved = fitness > pbest_fitness
+        pbest_fitness = torch.where(improved, fitness, pbest_fitness)
+        pbest_positions = torch.where(improved.unsqueeze(1), positions, pbest_positions)
+
+        iter_best_val, iter_best_idx = fitness.max(dim=0)
+        if iter_best_val.item() > gbest_fitness:
+            gbest_fitness = iter_best_val.item()
+            gbest_position = positions[iter_best_idx].clone()
+
+        convergence_best.append(gbest_fitness)
+        convergence_avg.append(fitness.mean().item())
+
+        # ── Inertia decay (linear) ────────────────────────────────────────────
+        w = w_start - (w_start - w_end) * (iteration / max(iterations - 1, 1))
+
+        # ── Velocity update ───────────────────────────────────────────────────
+        r1 = torch.rand_like(velocities)
+        r2 = torch.rand_like(velocities)
+
+        cognitive = c1 * r1 * (pbest_positions - positions)
+        social    = c2 * r2 * (gbest_position  - positions)
+        velocities = w * velocities + cognitive + social
+
+        # ── Position update & simplex projection ─────────────────────────────
+        positions = positions + velocities
+        positions = positions.clamp(0.0, 1.0)
+        sums = positions.sum(dim=1, keepdim=True)
+        positions = torch.where(sums > 0, positions / sums, positions)
+
+    best_weights = gbest_position.cpu().numpy()
+
+    if return_convergence:
+        return best_weights, convergence_best, convergence_avg
+    return best_weights
