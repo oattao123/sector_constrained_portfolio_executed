@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Selector Methods Explained</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --paper: #fffefa;
+      --ink: #202124;
+      --muted: #62645f;
+      --line: #d9d4c8;
+      --accent: #0f766e;
+      --accent-2: #b45309;
+      --accent-3: #1d4ed8;
+      --bad: #b91c1c;
+      --good: #15803d;
+      --shadow: 0 18px 38px rgba(33, 34, 31, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    button, input, select { font: inherit; }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 24px 18px;
+      border-right: 1px solid var(--line);
+      background: #ece8dd;
+      overflow-y: auto;
+    }
+
+    main {
+      padding: 28px;
+      max-width: 1240px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .mark {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #9ca39c;
+      background: #173b35;
+      color: #fff;
+      font-weight: 800;
+      border-radius: 8px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 34px; line-height: 1.1; max-width: 880px; margin-bottom: 12px; }
+    h2 { font-size: 22px; margin-bottom: 12px; }
+    h3 { font-size: 16px; margin-bottom: 8px; }
+    .muted { color: var(--muted); }
+
+    .nav-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b6a64;
+      margin: 20px 6px 8px;
+      font-weight: 800;
+    }
+
+    .method-nav {
+      display: grid;
+      gap: 7px;
+    }
+
+    .method-button {
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #282923;
+      padding: 10px 11px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .method-button:hover { background: rgba(255, 255, 255, 0.55); }
+    .method-button.active {
+      border-color: #9b9281;
+      background: var(--paper);
+      box-shadow: 0 8px 18px rgba(50, 46, 37, 0.08);
+    }
+
+    .badge {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      background: #d7e6df;
+      color: #064e3b;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      gap: 22px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .compact-panel {
+      background: #fffefa;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #f8f6ef;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 19px;
+      line-height: 1.2;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 22px;
+      align-items: start;
+    }
+
+    .method-card {
+      min-height: 460px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #c7c2b6;
+      background: #faf7ee;
+      color: #35352f;
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .formula {
+      font-family: "Cascadia Code", Consolas, monospace;
+      background: #17211f;
+      color: #d9fff4;
+      padding: 13px 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+
+    .flow {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      align-items: start;
+      border: 1px solid var(--line);
+      background: #fbf9f1;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .step-number {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #173b35;
+      color: #fff;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+
+    .matrix th, .matrix td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .matrix th {
+      background: #ebe5d6;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .matrix tr.active-row td {
+      background: #e5f3ee;
+      color: #0f3f35;
+      font-weight: 700;
+    }
+
+    .score {
+      height: 8px;
+      background: #e1ded3;
+      border-radius: 999px;
+      overflow: hidden;
+      min-width: 80px;
+    }
+
+    .score span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+
+    .network {
+      position: relative;
+      height: 250px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(23,59,53,0.06) 1px, transparent 1px),
+        linear-gradient(rgba(23,59,53,0.06) 1px, transparent 1px);
+      background-size: 28px 28px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .edge {
+      position: absolute;
+      height: 2px;
+      background: rgba(15, 118, 110, 0.32);
+      transform-origin: left center;
+    }
+
+    .node {
+      position: absolute;
+      width: 42px;
+      height: 42px;
+      margin: -21px 0 0 -21px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 11px;
+      border: 3px solid rgba(255,255,255,0.9);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.18);
+    }
+
+    .node.tech { background: #1d4ed8; }
+    .node.finance { background: #0f766e; }
+    .node.health { background: #be123c; }
+    .node.industrial { background: #92400e; }
+    .node.utility { background: #475569; }
+    .node.selected { outline: 4px solid rgba(21, 128, 61, 0.35); }
+
+    .controls {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #3b3b35;
+    }
+
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+    .choice-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .choice-row button {
+      border: 1px solid #bbb3a3;
+      background: #fbf9f1;
+      border-radius: 8px;
+      padding: 9px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .choice-row button.active {
+      background: #173b35;
+      color: #fff;
+      border-color: #173b35;
+    }
+
+    .insight {
+      border-left: 4px solid var(--accent);
+      padding: 11px 12px;
+      background: #edf8f4;
+      margin-top: 14px;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .warning {
+      border-left-color: var(--accent-2);
+      background: #fff4df;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .mini-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .mini-list li { margin: 6px 0; }
+
+    .footer-note {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      aside {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .hero, .grid, .two-col { grid-template-columns: 1fr; }
+      main { padding: 18px; }
+      h1 { font-size: 28px; }
+      .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand">
+        <div class="mark">SL</div>
+        <div>
+          <strong>Selector Lab</strong>
+          <div class="muted">Portfolio optimization</div>
+        </div>
+      </div>
+
+      <div class="nav-title">Methods in selectors.py</div>
+      <div class="method-nav" id="methodNav"></div>
+
+      <div class="nav-title">Interactive controls</div>
+      <div class="compact-panel">
+        <div class="controls">
+          <div class="control-group">
+            <label for="riskFree">Risk-free rate <span id="riskFreeLabel">4.5%</span></label>
+            <input id="riskFree" type="range" min="0" max="8" value="4.5" step="0.1">
+          </div>
+          <div class="control-group">
+            <label for="topN">Target assets / clusters <span id="topNLabel">6</span></label>
+            <input id="topN" type="range" min="3" max="8" value="6" step="1">
+          </div>
+          <div class="control-group">
+            <label for="corrPenalty">Correlation penalty <span id="corrPenaltyLabel">1.0x</span></label>
+            <input id="corrPenalty" type="range" min="0" max="2" value="1" step="0.1">
+          </div>
+        </div>
+        <p class="muted" style="margin-bottom:0">Move the controls to see how Sharpe and diversification pressure change the simulated ranking. The formulas mirror the logic in the selector code, using a small teaching dataset.</p>
+      </div>
+    </aside>
+
+    <main>
+      <section class="hero">
+        <div class="panel">
+          <p class="muted">Interactive explanation for <code>portfolio_optimization/selectors.py</code></p>
+          <h1>How each asset selector chooses portfolio candidates</h1>
+          <p>The selectors run after data preprocessing and Ledoit-Wolf covariance estimation. Their job is to reduce the asset universe into a candidate list before the weight optimizer, such as PSO, ACO, GWO, EBGWO, APSO, CLPSO, or LAPSO, solves the allocation problem.</p>
+          <div class="stats">
+            <div class="stat"><strong>6</strong><span class="muted">implemented selectors</span></div>
+            <div class="stat"><strong>Sharpe</strong><span class="muted">primary quality signal</span></div>
+            <div class="stat"><strong>Correlation</strong><span class="muted">diversification signal</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Selector pipeline</h2>
+          <div class="flow">
+            <div class="step"><div class="step-number">1</div><div><strong>Return matrix</strong><br><span class="muted">Daily log returns from cleaned asset price data.</span></div></div>
+            <div class="step"><div class="step-number">2</div><div><strong>Covariance model</strong><br><span class="muted">Standard correlation or Ledoit-Wolf shrunk covariance.</span></div></div>
+            <div class="step"><div class="step-number">3</div><div><strong>Selector</strong><br><span class="muted">Rank, cluster, or search for candidate assets.</span></div></div>
+            <div class="step"><div class="step-number">4</div><div><strong>Weight optimizer</strong><br><span class="muted">Maximize portfolio Sharpe under constraints.</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel method-card" id="methodCard"></article>
+
+        <aside class="panel" style="position:static;height:auto;overflow:visible">
+          <h2>Teaching universe</h2>
+          <p class="muted">Simulated assets, grouped by sector. Selected nodes are highlighted for the active method.</p>
+          <div class="network" id="network"></div>
+          <div class="choice-row" id="viewMode">
+            <button data-mode="ranking" class="active">Ranking</button>
+            <button data-mode="mechanism">Mechanism</button>
+          </div>
+          <div id="sideDetail" class="insight"></div>
+        </aside>
+      </section>
+
+      <section class="panel" style="margin-top:22px">
+        <h2>Selector comparison matrix</h2>
+        <table class="matrix" id="comparisonTable"></table>
+      </section>
+
+      <p class="footer-note">Source: explanations are derived from <code>portfolio_optimization/selectors.py</code> and the project manual. The interactive dataset is illustrative and does not replace actual pipeline output.</p>
+    </main>
+  </div>
+
+  <script>
+    const methods = [
+      {
+        id: "div",
+        short: "DIV",
+        name: "Diversification Score",
+        fn: "select_by_diversification",
+        type: "Rank + sector fill",
+        covariance: "Standard returns correlation",
+        objective: "Sharpe × low average correlation",
+        bestFor: "Fast baseline selection when the standard sample covariance is acceptable.",
+        formula: "Sharpe_i = (annual_return_i - rf) / annual_vol_i\nDiversificationScore_i = Sharpe_i * (1 - AvgCorr_i)",
+        notes: [
+          "Computes annual return, annual volatility, and individual Sharpe ratio from the return matrix.",
+          "Computes each asset's average correlation versus the full candidate universe.",
+          "Filters weak Sharpe assets when possible, then ranks by diversification score.",
+          "Adds at least one asset per sector when available, then fills remaining slots by score."
+        ],
+        strengths: ["Simple and explainable", "Explicitly rewards lower correlation", "Keeps sector coverage"],
+        risks: ["Uses raw sample correlation", "Does not directly optimize portfolio weights", "Sensitive to noisy historical returns"]
+      },
+      {
+        id: "lwdiv",
+        short: "LW",
+        name: "Ledoit-Wolf Diversification",
+        fn: "select_by_lw_diversification",
+        type: "Shrinkage rank + sector fill",
+        covariance: "Ledoit-Wolf shrunk covariance and correlation",
+        objective: "LW Sharpe × low average LW correlation",
+        bestFor: "More stable ranking when the asset universe is noisy or the training window is limited.",
+        formula: "LWSharpe_i = (LW annual_return_i - rf) / LW annual_vol_i\nDiversificationScore_i = LWSharpe_i * (1 - AvgLWCorr_i)",
+        notes: [
+          "Uses the Ledoit-Wolf covariance tensor, usually on GPU when available.",
+          "Annual volatility comes from the diagonal of the shrunk covariance matrix.",
+          "Ranks candidates by a diversification score using the shrunk correlation matrix.",
+          "Applies the same sector-stratified selection pattern as the basic diversification selector."
+        ],
+        strengths: ["More stable covariance estimate", "GPU-compatible tensor implementation", "Keeps the simple rank-based explanation"],
+        risks: ["Shrinkage can smooth real regime-specific relationships", "Still uses individual asset Sharpe rather than portfolio-level search", "Needs valid covariance and correlation tensors"]
+      },
+      {
+        id: "hrps",
+        short: "HRP-S",
+        name: "HRP Cluster + Max Sharpe",
+        fn: "select_by_hrp_sharpe",
+        type: "Cluster representative",
+        covariance: "Ledoit-Wolf correlation transformed into distance",
+        objective: "One highest-Sharpe asset from each cluster",
+        bestFor: "Avoiding duplicate assets from the same correlation group while keeping strong individual performers.",
+        formula: "Distance_ij = sqrt(0.5 * (1 - Corr_ij))\nCluster assets with Ward linkage\nPick argmax(Sharpe_i) inside each cluster",
+        notes: [
+          "Converts the correlation matrix into a distance matrix.",
+          "Runs hierarchical clustering with Ward linkage and a requested cluster count.",
+          "For each cluster, chooses the asset with the maximum Ledoit-Wolf Sharpe.",
+          "Returns the selected representatives sorted by diversification score."
+        ],
+        strengths: ["Controls correlation duplication", "Easy to explain as one representative per group", "Uses stabilized volatility from Ledoit-Wolf"],
+        risks: ["Cluster quality depends on correlation structure", "A high-Sharpe asset can still be highly correlated with selected assets from other clusters", "Cluster count is a sensitive hyperparameter"]
+      },
+      {
+        id: "hrpd",
+        short: "HRP-D",
+        name: "HRP Cluster + Max Diversification",
+        fn: "select_by_hrp_div",
+        type: "Cluster representative",
+        covariance: "Ledoit-Wolf correlation transformed into distance",
+        objective: "One highest-diversification-score asset from each cluster",
+        bestFor: "When you want cluster coverage but prefer low-correlation assets over pure individual Sharpe.",
+        formula: "DivScore_i = LWSharpe_i * (1 - mean(Corr_i))\nCluster assets with Ward linkage\nPick argmax(DivScore_i) inside each cluster",
+        notes: [
+          "Computes Ledoit-Wolf Sharpe for every asset.",
+          "Computes a diversification score against the full correlation matrix.",
+          "Builds HRP-style clusters from correlation distance.",
+          "Selects the maximum diversification score asset within every cluster."
+        ],
+        strengths: ["Balances quality and correlation", "Reduces concentrated cluster exposure", "Usually more diversified than max-Sharpe cluster selection"],
+        risks: ["Can skip the strongest return asset in a cluster", "Average correlation can hide pairwise concentration", "Still produces candidates, not final weights"]
+      },
+      {
+        id: "aco",
+        short: "ACO",
+        name: "2D-ACO Direct Selection",
+        fn: "select_by_aco",
+        type: "Stochastic path search",
+        covariance: "Ledoit-Wolf covariance and correlation",
+        objective: "Maximize equal-weight portfolio Sharpe",
+        bestFor: "Searching combinations directly when ranking alone may miss useful asset sets.",
+        formula: "Probability(asset j) ∝ pheromone^alpha * heuristic^beta\nHeuristic_j = Sharpe_j - min(Sharpe) + epsilon\nFitness = PortfolioSharpe(equal weights)",
+        notes: [
+          "Each ant constructs a fixed-size portfolio path without selecting an asset twice.",
+          "The heuristic favors assets with higher individual Sharpe.",
+          "The selected path is evaluated as an equal-weight portfolio using the shrunk covariance.",
+          "Pheromones evaporate each iteration and are reinforced along the best path."
+        ],
+        strengths: ["Optimizes asset combinations directly", "Can escape simple rank order", "Uses transition pheromones between asset pairs"],
+        risks: ["Stochastic and parameter sensitive", "More expensive than rank-based selectors", "Equal-weight fitness may differ from final optimized weights"]
+      },
+      {
+        id: "acoc",
+        short: "ACO-C",
+        name: "2D-ACO + Cluster Constraint",
+        fn: "select_by_aco_cluster",
+        type: "Cluster-constrained stochastic search",
+        covariance: "Ledoit-Wolf covariance and HRP clusters",
+        objective: "Maximize equal-weight Sharpe while picking one asset per cluster",
+        bestFor: "Combining ACO search with explicit diversification across correlation clusters.",
+        formula: "Build HRP clusters\nFor each cluster step, ant samples one asset\nFitness = PortfolioSharpe(equal weights)\nReinforce the best cluster path",
+        notes: [
+          "First groups assets into HRP-style correlation clusters.",
+          "Each ant must choose one representative from each cluster.",
+          "Transition pheromones learn which representatives work well together.",
+          "The final selected set is sorted with Sharpe and diversification diagnostics."
+        ],
+        strengths: ["Directly prevents cluster over-concentration", "Keeps ACO combination search", "Good teaching bridge from HRP to swarm search"],
+        risks: ["Cluster order affects the path construction process", "If clusters are too many, the portfolio may become too large", "Uses stochastic search, so multiple trials are useful"]
+      }
+    ];
+
+    const assets = [
+      { t: "AAPL", sector: "tech", ret: 0.18, vol: 0.25, x: 74, y: 58, cluster: 1 },
+      { t: "MSFT", sector: "tech", ret: 0.16, vol: 0.21, x: 66, y: 38, cluster: 1 },
+      { t: "NVDA", sector: "tech", ret: 0.28, vol: 0.43, x: 86, y: 34, cluster: 1 },
+      { t: "JPM", sector: "finance", ret: 0.12, vol: 0.20, x: 30, y: 38, cluster: 2 },
+      { t: "SCB", sector: "finance", ret: 0.11, vol: 0.22, x: 22, y: 58, cluster: 2 },
+      { t: "UNH", sector: "health", ret: 0.14, vol: 0.18, x: 50, y: 24, cluster: 3 },
+      { t: "JNJ", sector: "health", ret: 0.09, vol: 0.13, x: 44, y: 50, cluster: 3 },
+      { t: "CAT", sector: "industrial", ret: 0.13, vol: 0.24, x: 56, y: 76, cluster: 4 },
+      { t: "GE", sector: "industrial", ret: 0.17, vol: 0.31, x: 40, y: 78, cluster: 4 },
+      { t: "NEE", sector: "utility", ret: 0.08, vol: 0.16, x: 18, y: 22, cluster: 5 }
+    ];
+
+    const sectorCorr = {
+      tech: 0.58,
+      finance: 0.48,
+      health: 0.32,
+      industrial: 0.44,
+      utility: 0.22
+    };
+
+    let activeMethod = methods[0];
+    let viewMode = "ranking";
+
+    const nav = document.getElementById("methodNav");
+    const methodCard = document.getElementById("methodCard");
+    const network = document.getElementById("network");
+    const sideDetail = document.getElementById("sideDetail");
+    const comparisonTable = document.getElementById("comparisonTable");
+    const riskFree = document.getElementById("riskFree");
+    const topN = document.getElementById("topN");
+    const corrPenalty = document.getElementById("corrPenalty");
+
+    function avgCorr(asset) {
+      const base = sectorCorr[asset.sector] || 0.35;
+      return Math.min(0.78, Math.max(0.12, base + (asset.vol - 0.22) * 0.35));
+    }
+
+    function sharpe(asset) {
+      const rf = Number(riskFree.value) / 100;
+      return (asset.ret - rf) / asset.vol;
+    }
+
+    function divScore(asset) {
+      return sharpe(asset) * (1 - avgCorr(asset) * Number(corrPenalty.value));
+    }
+
+    function rankedAssets() {
+      const target = Number(topN.value);
+      let scored = assets.map(a => ({
+        ...a,
+        sharpe: sharpe(a),
+        corr: avgCorr(a),
+        score: divScore(a)
+      }));
+
+      if (activeMethod.id === "hrps") {
+        scored = pickByCluster(scored, "sharpe");
+      } else if (activeMethod.id === "hrpd" || activeMethod.id === "acoc") {
+        scored = pickByCluster(scored, "score");
+      } else if (activeMethod.id === "aco") {
+        scored = scored.sort((a, b) => (b.score + b.sharpe * 0.25) - (a.score + a.sharpe * 0.25)).slice(0, target);
+      } else {
+        scored = sectorFill(scored, target);
+      }
+
+      return scored.sort((a, b) => b.score - a.score).slice(0, target);
+    }
+
+    function pickByCluster(scored, key) {
+      const clusters = new Map();
+      scored.forEach(a => {
+        if (!clusters.has(a.cluster)) clusters.set(a.cluster, []);
+        clusters.get(a.cluster).push(a);
+      });
+      return [...clusters.values()].map(group => group.sort((a, b) => b[key] - a[key])[0]);
+    }
+
+    function sectorFill(scored, target) {
+      const bySector = new Map();
+      scored.forEach(a => {
+        if (!bySector.has(a.sector)) bySector.set(a.sector, []);
+        bySector.get(a.sector).push(a);
+      });
+      const selected = [];
+      bySector.forEach(group => selected.push(group.sort((a, b) => b.score - a.score)[0]));
+      scored.sort((a, b) => b.score - a.score).forEach(a => {
+        if (selected.length < target && !selected.find(s => s.t === a.t)) selected.push(a);
+      });
+      return selected;
+    }
+
+    function renderNav() {
+      nav.innerHTML = methods.map(m => `
+        <button class="method-button ${m.id === activeMethod.id ? "active" : ""}" data-id="${m.id}">
+          <span class="badge">${m.short}</span>
+          <span><strong>${m.name}</strong><br><span class="muted">${m.fn}</span></span>
+        </button>
+      `).join("");
+      nav.querySelectorAll("button").forEach(button => {
+        button.addEventListener("click", () => {
+          activeMethod = methods.find(m => m.id === button.dataset.id);
+          render();
+        });
+      });
+    }
+
+    function renderMethodCard(selected) {
+      const selectedText = selected.map(a => a.t).join(", ");
+      methodCard.innerHTML = `
+        <p class="muted">${activeMethod.fn}</p>
+        <h2>${activeMethod.name}</h2>
+        <p>${activeMethod.bestFor}</p>
+        <div class="pill-row">
+          <span class="pill">Type: ${activeMethod.type}</span>
+          <span class="pill">Covariance: ${activeMethod.covariance}</span>
+          <span class="pill">Objective: ${activeMethod.objective}</span>
+        </div>
+        <div class="formula">${activeMethod.formula.replaceAll("\n", "<br>")}</div>
+        <h3>How it works</h3>
+        <div class="flow">
+          ${activeMethod.notes.map((note, i) => `<div class="step"><div class="step-number">${i + 1}</div><div>${note}</div></div>`).join("")}
+        </div>
+        <div class="two-col">
+          <div class="compact-panel">
+            <h3>Strengths</h3>
+            <ul class="mini-list">${activeMethod.strengths.map(x => `<li>${x}</li>`).join("")}</ul>
+          </div>
+          <div class="compact-panel">
+            <h3>Watch-outs</h3>
+            <ul class="mini-list">${activeMethod.risks.map(x => `<li>${x}</li>`).join("")}</ul>
+          </div>
+        </div>
+        <div class="insight">
+          <strong>Current simulated selection:</strong> ${selectedText}
+        </div>
+      `;
+    }
+
+    function renderNetwork(selected) {
+      const selectedSet = new Set(selected.map(a => a.t));
+      const edges = [
+        ["AAPL", "MSFT"], ["MSFT", "NVDA"], ["JPM", "SCB"], ["UNH", "JNJ"], ["CAT", "GE"],
+        ["AAPL", "NVDA"], ["JNJ", "NEE"], ["JPM", "GE"], ["SCB", "NEE"], ["MSFT", "UNH"]
+      ];
+
+      function byTicker(t) { return assets.find(a => a.t === t); }
+      function edgeMarkup(a, b) {
+        const one = byTicker(a);
+        const two = byTicker(b);
+        const dx = two.x - one.x;
+        const dy = two.y - one.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        return `<div class="edge" style="left:${one.x}%;top:${one.y}%;width:${length}%;transform:rotate(${angle}deg)"></div>`;
+      }
+
+      network.innerHTML = `
+        ${edges.map(e => edgeMarkup(e[0], e[1])).join("")}
+        ${assets.map(a => `<div class="node ${a.sector} ${selectedSet.has(a.t) ? "selected" : ""}" style="left:${a.x}%;top:${a.y}%">${a.t}</div>`).join("")}
+      `;
+    }
+
+    function renderComparison(selected) {
+      const selectedSet = new Set(selected.map(a => a.t));
+      const rows = assets.map(a => {
+        const s = sharpe(a);
+        const c = avgCorr(a);
+        const d = divScore(a);
+        const width = Math.max(4, Math.min(100, (d + 0.3) * 60));
+        return `<tr class="${selectedSet.has(a.t) ? "active-row" : ""}">
+          <td>${a.t}</td>
+          <td>${labelForSector(a.sector)}</td>
+          <td>${(a.ret * 100).toFixed(1)}%</td>
+          <td>${(a.vol * 100).toFixed(1)}%</td>
+          <td>${s.toFixed(2)}</td>
+          <td>${c.toFixed(2)}</td>
+          <td><div class="score"><span style="width:${width}%"></span></div></td>
+        </tr>`;
+      }).join("");
+
+      comparisonTable.innerHTML = `
+        <thead>
+          <tr><th>Asset</th><th>Sector</th><th>Ann. return</th><th>Ann. vol</th><th>Sharpe</th><th>Avg corr</th><th>Div score</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      `;
+    }
+
+    function labelForSector(sector) {
+      return {
+        tech: "Technology",
+        finance: "Financials",
+        health: "Health Care",
+        industrial: "Industrials",
+        utility: "Utilities"
+      }[sector] || sector;
+    }
+
+    function renderSideDetail(selected) {
+      if (viewMode === "ranking") {
+        sideDetail.className = "insight";
+        sideDetail.innerHTML = `<strong>Ranking view:</strong> selected assets are based on the active method. Adjust risk-free rate or correlation penalty to see how Sharpe and diversification score react.`;
+      } else {
+        sideDetail.className = "insight warning";
+        const mechanism = activeMethod.id.includes("aco")
+          ? "ACO creates many candidate paths, evaluates equal-weight portfolio Sharpe, evaporates old pheromone, and reinforces the best path."
+          : activeMethod.id.includes("hrp")
+            ? "HRP-style methods convert correlation into distance, cluster similar assets, then choose one representative from each cluster."
+            : "Rank-based methods calculate asset-level diagnostics, enforce broad sector coverage, and fill the remaining slots by score.";
+        sideDetail.innerHTML = `<strong>Mechanism view:</strong> ${mechanism}`;
+      }
+    }
+
+    function renderLabels() {
+      document.getElementById("riskFreeLabel").textContent = `${Number(riskFree.value).toFixed(1)}%`;
+      document.getElementById("topNLabel").textContent = topN.value;
+      document.getElementById("corrPenaltyLabel").textContent = `${Number(corrPenalty.value).toFixed(1)}x`;
+    }
+
+    function render() {
+      renderLabels();
+      renderNav();
+      const selected = rankedAssets();
+      renderMethodCard(selected);
+      renderNetwork(selected);
+      renderComparison(selected);
+      renderSideDetail(selected);
+    }
+
+    [riskFree, topN, corrPenalty].forEach(input => input.addEventListener("input", render));
+    document.querySelectorAll("#viewMode button").forEach(button => {
+      button.addEventListener("click", () => {
+        viewMode = button.dataset.mode;
+        document.querySelectorAll("#viewMode button").forEach(b => b.classList.toggle("active", b === button));
+        renderSideDetail(rankedAssets());
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>

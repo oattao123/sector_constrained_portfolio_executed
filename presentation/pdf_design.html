@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Portfolio Optimization Pipeline</title>
+  <style>
+    @page { size: 16in 9in; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Aptos", "Segoe UI", Arial, sans-serif;
+      color: #172033;
+      background: #f5f7fb;
+    }
+    .slide {
+      width: 16in;
+      height: 9in;
+      page-break-after: always;
+      padding: 0.55in 0.75in;
+      display: flex;
+      flex-direction: column;
+      background: #f8fafc;
+      border-top: 0.08in solid #1f8a70;
+      position: relative;
+    }
+    .slide.dark {
+      background: #172033;
+      color: #f8fafc;
+      border-top-color: #f2b84b;
+    }
+    h1 {
+      font-size: 48pt;
+      line-height: 1.05;
+      margin: 0 0 0.18in 0;
+      letter-spacing: 0;
+    }
+    h2 {
+      font-size: 30pt;
+      line-height: 1.15;
+      margin: 0 0 0.26in 0;
+      letter-spacing: 0;
+    }
+    h3 {
+      font-size: 18pt;
+      margin: 0 0 0.12in 0;
+      color: #1f8a70;
+    }
+    .dark h3 { color: #f2b84b; }
+    p, li, td, th {
+      font-size: 16pt;
+      line-height: 1.35;
+    }
+    .lead {
+      font-size: 22pt;
+      line-height: 1.3;
+      max-width: 11in;
+      color: #40506b;
+    }
+    .dark .lead { color: #d9e3ef; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.28in;
+      flex: 1;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.22in;
+    }
+    .panel {
+      background: #ffffff;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      padding: 0.24in;
+      box-shadow: 0 8px 18px rgba(23, 32, 51, 0.07);
+    }
+    .dark .panel {
+      background: #22304a;
+      border-color: #40506b;
+      box-shadow: none;
+    }
+    .metric {
+      font-size: 31pt;
+      font-weight: 700;
+      color: #1f8a70;
+      margin-bottom: 0.04in;
+    }
+    .dark .metric { color: #f2b84b; }
+    .label {
+      font-size: 13pt;
+      color: #5f6e84;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .dark .label { color: #b9c5d6; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th {
+      background: #22304a;
+      color: #fff;
+      font-weight: 650;
+      text-align: left;
+      padding: 0.11in;
+      font-size: 13pt;
+    }
+    td {
+      padding: 0.1in 0.11in;
+      border-bottom: 1px solid #e5ebf3;
+      font-size: 13pt;
+      vertical-align: top;
+    }
+    ul { margin: 0.05in 0 0 0.25in; padding: 0; }
+    li { margin: 0.08in 0; }
+    .footer {
+      position: absolute;
+      left: 0.75in;
+      right: 0.75in;
+      bottom: 0.28in;
+      display: flex;
+      justify-content: space-between;
+      color: #7c8aa0;
+      font-size: 10pt;
+    }
+    .dark .footer { color: #aab8ca; }
+    .tag {
+      display: inline-block;
+      padding: 0.06in 0.12in;
+      border-radius: 999px;
+      background: #e7f4f0;
+      color: #126452;
+      font-size: 12pt;
+      margin: 0.04in 0.06in 0.04in 0;
+      font-weight: 650;
+    }
+    .dark .tag {
+      background: #33425d;
+      color: #f8fafc;
+    }
+    .chart {
+      max-width: 100%;
+      max-height: 5.6in;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      padding: 0.08in;
+    }
+    .small { font-size: 12pt; color: #5f6e84; }
+    .dark .small { color: #b9c5d6; }
+  </style>
+</head>
+<body>
+  <section class="slide dark">
+    <h1>Multi-Asset Portfolio Optimization Pipeline</h1>
+    <p class="lead">Data collection, preprocessing, asset selection, SI weight optimization, and walk-forward testing.</p>
+    <div style="margin-top:0.45in">
+      <span class="tag">Base currency: THB</span>
+      <span class="tag">Ledoit-Wolf Covariance</span>
+      <span class="tag">HRP + ACO Selection</span>
+      <span class="tag">PSO / ACO+EBGWO Weights</span>
+    </div>
+    <div class="footer"><span>Source: manual.md and latest pipeline outputs</span><span>1</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Data Collection</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Executed Universe</h3>
+        <ul>
+          <li>30 assets in `config/assets.csv`.</li>
+          <li>Thai equities, US-listed equities, and bonds.</li>
+          <li>SPY appended automatically as S&amp;P 500 benchmark.</li>
+          <li>USD assets converted to THB.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Requested Expansion</h3>
+        <ul>
+          <li>S&amp;P 500 assets.</li>
+          <li>Thai assets.</li>
+          <li>Chinese assets.</li>
+          <li>ETC and Crypto.</li>
+        </ul>
+        <p class="small">Chinese, ETC, and Crypto are not in the current executed `assets.csv`.</p>
+      </div>
+    </div>
+    <div class="footer"><span>Data source: Yahoo Finance via yfinance</span><span>2</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Train / Test Design</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Requested Windows</h3>
+        <table>
+          <tr><th>Window</th><th>Start</th><th>End</th></tr>
+          <tr><td>Train</td><td>2015-01-01</td><td>2024-01-01</td></tr>
+          <tr><td>Test</td><td>2025-01-01</td><td>2026-01-01</td></tr>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>Current Pipeline Config</h3>
+        <table>
+          <tr><th>Setting</th><th>Value</th></tr>
+          <tr><td>Start date</td><td>2015-01-01</td></tr>
+          <tr><td>In-sample end</td><td>2024-01-01</td></tr>
+          <tr><td>Out-of-sample end</td><td>2026-03-20</td></tr>
+          <tr><td>Transaction cost</td><td>0.1% turnover</td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="small">Implementation note: `backtest.py` defaults to rolling 3-year lookback and quarterly step, not 4-year / 1-year.</p>
+    <div class="footer"><span>Current run includes 2025-only and full-period OOS reports</span><span>3</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Data Preprocessing</h2>
+    <div class="grid-3">
+      <div class="panel"><div class="metric">365d</div><div class="label">Missing gap cutoff</div><p>Drop assets with consecutive missing values longer than 365 days.</p></div>
+      <div class="panel"><div class="metric">log</div><div class="label">Return transform</div><p>Convert prices to log returns: `log(P_t / P_{t-1})`.</p></div>
+      <div class="panel"><div class="metric">LW</div><div class="label">Covariance</div><p>Use Ledoit-Wolf shrinkage covariance with PyTorch device auto-detection.</p></div>
+    </div>
+    <div class="panel" style="margin-top:0.28in">
+      <h3>Currency Handling</h3>
+      <p>USD-denominated assets are converted into THB using `USDTHB=X`; if FX download fails, the fallback rate is 35.0 THB/USD.</p>
+    </div>
+    <div class="footer"><span>Preprocessing from DataManager and covariance modules</span><span>4</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Asset Selection Strategies</h2>
+    <table>
+      <tr><th>Strategy</th><th>Idea</th></tr>
+      <tr><td>Sharpe Ratio</td><td>Select strongest individual risk-adjusted performers.</td></tr>
+      <tr><td>Diversification Score</td><td>Reward high Sharpe and lower average correlation.</td></tr>
+      <tr><td>Ledoit-Wolf + Diversification</td><td>Use robust covariance and correlation estimates.</td></tr>
+      <tr><td>HRP + Max Sharpe per Cluster</td><td>Cluster similar assets, then select best Sharpe representative.</td></tr>
+      <tr><td>HRP + Max Diversification per Cluster</td><td>Cluster first, then choose best diversification representative.</td></tr>
+      <tr><td>2D-ACO / 2D-ACO + Cluster</td><td>Discrete pheromone-guided asset selection, optionally constrained by clusters.</td></tr>
+    </table>
+    <div class="footer"><span>Selection layer feeds the optimizer layer</span><span>5</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Weight Optimization and Objective</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Representation</h3>
+        <ul>
+          <li>ACO selection: integer / discrete path encoding.</li>
+          <li>PSO, EBGWO, SI/DE-style methods: float weight vectors.</li>
+          <li>Current optimization is long-only.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Objective</h3>
+        <p><strong>Maximize Sharpe Ratio</strong> with entropy reward and concentration / constraint penalties.</p>
+        <p class="small">Fitness uses Ledoit-Wolf volatility estimates and annualized return assumptions.</p>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-top:0.25in">
+      <div class="panel"><h3>PSO</h3><p>Particles search weight space using personal and global best portfolios.</p></div>
+      <div class="panel"><h3>ACO</h3><p>Pheromone trails and Sharpe heuristics bias asset paths.</p></div>
+      <div class="panel"><h3>EBGWO</h3><p>Wolf population follows leading solutions while preserving exploration.</p></div>
+    </div>
+    <div class="footer"><span>Implemented latest runs: PSO and ACO+EBGWO</span><span>6</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Constraints and Bonus Features</h2>
+    <table>
+      <tr><th>Item</th><th>Requested</th><th>Current status</th></tr>
+      <tr><td>Minimum assets</td><td>5</td><td>Implemented as lower bound through `max(5, len(valid_stocks)//2)`.</td></tr>
+      <tr><td>Maximum assets</td><td>15</td><td>Needs explicit enforcement if strict max 15 is required.</td></tr>
+      <tr><td>Sector constraint</td><td>Bonus</td><td>Available in dynamic ACO+EBGWO via sector labels.</td></tr>
+      <tr><td>Short sell</td><td>Bonus</td><td>Not enabled in current long-only encoding.</td></tr>
+      <tr><td>Transaction cost</td><td>Required realism</td><td>0.1% turnover cost applied at each rebalance.</td></tr>
+    </table>
+    <div class="footer"><span>Constraint status from run scripts and backtester</span><span>7</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Convergence and Stability</h2>
+    <div class="grid">
+      <div>
+        <img class="chart" src="../output/pso_26_05_03_39/convergence.png" alt="PSO convergence">
+      </div>
+      <div class="panel">
+        <h3>How Stability Is Reported</h3>
+        <ul>
+          <li>Latest PSO run: 2 trials per strategy.</li>
+          <li>Latest ACO+EBGWO run: 2 trials per strategy.</li>
+          <li>Tables report mean +- standard deviation.</li>
+          <li>Convergence tracks best and average fitness.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer"><span>Chart: output/pso_26_05_03_39/convergence.png</span><span>8</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Evaluation Metrics</h2>
+    <div class="grid-3">
+      <div class="panel"><div class="metric">Sharpe</div><div class="label">Reported</div><p>Risk-adjusted return above risk-free rate.</p></div>
+      <div class="panel"><div class="metric">Return</div><div class="label">Reported</div><p>Cumulative and annualized return.</p></div>
+      <div class="panel"><div class="metric">Max DD</div><div class="label">Reported</div><p>Largest peak-to-trough portfolio decline.</p></div>
+    </div>
+    <div class="panel" style="margin-top:0.28in">
+      <h3>Requested Addition</h3>
+      <p>Sortino Ratio is requested in the topic list but is not currently produced by `compute_metrics()`.</p>
+    </div>
+    <div class="footer"><span>Metrics: with-cost and no-cost results are reported side by side</span><span>9</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Latest PSO Results</h2>
+    <div class="grid-3">
+      <div class="panel"><div class="metric">50.85%</div><div class="label">Cum Return</div><p>PSO Portfolio, with cost, full period.</p></div>
+      <div class="panel"><div class="metric">1.4564</div><div class="label">Sharpe Ratio</div><p>Mean across 2 trials, std 0.3083.</p></div>
+      <div class="panel"><div class="metric">7.43%</div><div class="label">SPY Cum Return</div><p>Benchmark full-period cumulative return.</p></div>
+    </div>
+    <table style="margin-top:0.25in">
+      <tr><th>Strategy</th><th>Cum Return</th><th>Ann Return</th><th>Sharpe</th><th>Max DD</th></tr>
+      <tr><td>PSO Portfolio</td><td>50.85% +- 9.11%</td><td>39.65% +- 4.98%</td><td>1.4564 +- 0.3083</td><td>-21.97% +- 3.05%</td></tr>
+      <tr><td>LW Div Cluster</td><td>45.72% +- 10.05%</td><td>36.02% +- 6.50%</td><td>1.4161 +- 0.1988</td><td>-18.05% +- 0.97%</td></tr>
+      <tr><td>SPY Benchmark</td><td>7.43%</td><td>8.10%</td><td>0.1949</td><td>-19.21%</td></tr>
+    </table>
+    <div class="footer"><span>Source: output/pso_26_05_03_39/performance_report.md</span><span>10</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>Latest ACO+EBGWO Results</h2>
+    <div class="grid-3">
+      <div class="panel"><div class="metric">40.90%</div><div class="label">Best Cum Return</div><p>ACO Selected, with cost, full period.</p></div>
+      <div class="panel"><div class="metric">1.2425</div><div class="label">Sharpe Ratio</div><p>Mean across 2 trials, std 0.4215.</p></div>
+      <div class="panel"><div class="metric">16.43%</div><div class="label">Dynamic ACO+EBGWO</div><p>Higher instability: std 21.98% cumulative return.</p></div>
+    </div>
+    <table style="margin-top:0.25in">
+      <tr><th>Strategy</th><th>Cum Return</th><th>Ann Return</th><th>Sharpe</th><th>Max DD</th></tr>
+      <tr><td>ACO Selected</td><td>40.90% +- 11.75%</td><td>33.31% +- 6.88%</td><td>1.2425 +- 0.4215</td><td>-17.75% +- 5.43%</td></tr>
+      <tr><td>LW Sharpe Cluster</td><td>35.51% +- 11.71%</td><td>29.30% +- 6.59%</td><td>1.2577 +- 0.6371</td><td>-16.86% +- 8.94%</td></tr>
+      <tr><td>SPY Benchmark</td><td>7.43%</td><td>8.10%</td><td>0.1949</td><td>-19.21%</td></tr>
+    </table>
+    <div class="footer"><span>Source: output/aco_ebgwo_26_05_03_38/performance_report.md</span><span>11</span></div>
+  </section>
+
+  <section class="slide">
+    <h2>2025 Out-of-Sample View</h2>
+    <div class="grid">
+      <div>
+        <img class="chart" src="../output/pso_26_05_03_39/performance_2025.png" alt="2025 performance">
+      </div>
+      <div class="panel">
+        <h3>PSO 2025 With Cost</h3>
+        <ul>
+          <li>Cumulative return: 34.53% +- 5.13%.</li>
+          <li>Annual return: 36.05% +- 3.73%.</li>
+          <li>Sharpe Ratio: 1.2721 +- 0.2522.</li>
+          <li>SPY 2025 cumulative return: 11.21%.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer"><span>Chart: output/pso_26_05_03_39/performance_2025.png</span><span>12</span></div>
+  </section>
+
+  <section class="slide dark">
+    <h2>Key Findings and Next Steps</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Findings</h3>
+        <ul>
+          <li>PSO is the strongest latest executed optimizer.</li>
+          <li>ACO Selected leads the ACO+EBGWO run.</li>
+          <li>Both outperform SPY on cumulative return and Sharpe.</li>
+          <li>Transaction costs reduce results slightly but do not change the PSO leader.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>To Align With Rubric</h3>
+        <ul>
+          <li>Add Sortino Ratio to reports.</li>
+          <li>Set explicit 4-year train / 1-year test walk-forward.</li>
+          <li>Enforce max 15 assets.</li>
+          <li>Add Chinese, ETC, and Crypto tickers if those markets are mandatory.</li>
+          <li>Add short-selling only if required as a bonus feature.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer"><span>Recommended baseline: PSO Portfolio</span><span>13</span></div>
+  </section>
+</body>
+</html>
