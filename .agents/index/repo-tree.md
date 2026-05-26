@@ -18,6 +18,13 @@
   - pipeline.log
   - pyproject.toml
   - run_pipeline.py
+  - run_pipeline_aco_ebgwo.py
+  - run_pipeline_acor.py
+  - run_pipeline_apso.py
+  - run_pipeline_ciac.py
+  - run_pipeline_clpso.py
+  - run_pipeline_lapso.py
+  - run_pipeline_pso.py
   - tune_pipeline.py
   - **backup/**
     - EDA.ipynb

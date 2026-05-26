@@ -86,12 +86,41 @@ def print_backtest_table(results, title="Walk-Forward Performance Metrics"):
     table.add_column("Max DD", justify="right", style="bold red")
     
     for r in results:
+        cum_std = r.get("Cum Return Std", 0.0)
+        ann_std = r.get("Ann Return Std", 0.0)
+        vol_std = r.get("Ann Volatility Std", r.get("Ann Vol Std", 0.0))
+        sharpe_std = r.get("Sharpe Ratio Std", r.get("Sharpe Std", 0.0))
+        max_dd_std = r.get("Max Drawdown Std", r.get("Max DD Std", 0.0))
+        
+        cum_str = f"{r['Cum Return']:.2%}"
+        if cum_std > 0:
+            cum_str += f" +- {cum_std:.2%}"
+            
+        ann_str = f"{r['Ann Return']:.2%}"
+        if ann_std > 0:
+            ann_str += f" +- {ann_std:.2%}"
+            
+        vol_val = r.get("Ann Volatility", r.get("Ann Vol", 0.0))
+        vol_str = f"{vol_val:.2%}"
+        if vol_std > 0:
+            vol_str += f" +- {vol_std:.2%}"
+            
+        sharpe_val = r.get("Sharpe Ratio", r.get("Sharpe", 0.0))
+        sharpe_str = f"{sharpe_val:.4f}"
+        if sharpe_std > 0:
+            sharpe_str += f" +- {sharpe_std:.4f}"
+            
+        max_dd_val = r.get("Max Drawdown", r.get("Max DD", 0.0))
+        max_dd_str = f"{max_dd_val:.2%}"
+        if max_dd_std > 0:
+            max_dd_str += f" +- {max_dd_std:.2%}"
+            
         table.add_row(
             r["Strategy"],
-            f"{r['Cum Return']:>9.2%}",
-            f"{r['Ann Return']:>7.2%}",
-            f"{r['Ann Volatility'] if 'Ann Volatility' in r else r['Ann Vol']:>7.2%}",
-            f"{r['Sharpe Ratio'] if 'Sharpe Ratio' in r else r['Sharpe']:>7.4f}",
-            f"{r['Max Drawdown'] if 'Max Drawdown' in r else r['Max DD']:>7.2%}"
+            cum_str,
+            ann_str,
+            vol_str,
+            sharpe_str,
+            max_dd_str
         )
     console.print(table)

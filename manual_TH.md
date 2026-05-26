@@ -24,6 +24,45 @@ uv sync
 uv run python run_pipeline.py
 ```
 
+### 2.5 การแยกสคริปต์สำหรับแต่ละออปติไมเซอร์ (Separate Optimizer Pipelines)
+
+หากต้องการรันการจำลอง walk-forward OOS โดยเน้นใช้เฉพาะออปติไมเซอร์ใดออปติไมเซอร์หนึ่งโดยเฉพาะ สามารถเรียกใช้งานสคริปต์แยกต่อไปนี้:
+
+**1. รันเฉพาะตัวออปติไมเซอร์ ACO + EBGWO:**
+```bash
+uv run python run_pipeline_aco_ebgwo.py
+```
+
+**2. รันเฉพาะตัวออปติไมเซอร์ PSO:**
+```bash
+uv run python run_pipeline_pso.py
+```
+
+**3. รันเฉพาะตัวออปติไมเซอร์ CLPSO:**
+```bash
+uv run python run_pipeline_clpso.py
+```
+
+**4. รันเฉพาะตัวออปติไมเซอร์ APSO:**
+```bash
+uv run python run_pipeline_apso.py
+```
+
+**5. รันเฉพาะตัวออปติไมเซอร์ LAPSO:**
+```bash
+uv run python run_pipeline_lapso.py
+```
+
+**6. รันเฉพาะตัวออปติไมเซอร์ ACOR:**
+```bash
+uv run python run_pipeline_acor.py
+```
+
+**7. รันเฉพาะตัวออปติไมเซอร์ CIAC:**
+```bash
+uv run python run_pipeline_ciac.py
+```
+
 ---
 
 ## 3. พารามิเตอร์ของคำสั่ง (Command Line Arguments)
@@ -32,19 +71,21 @@ uv run python run_pipeline.py
 | :--- | :---: | :---: | :--- |
 | `--settings` | `str` | `config/settings.json` | พาธไปยังไฟล์คอนฟิกูเรชัน JSON |
 | `--assets` | `str` | `config/assets.csv` | พาธไปยังไฟล์รายการและกลุ่มสินทรัพย์หลักทรัพย์เป้าหมาย |
-| `--cache` | `str` | `all_data.csv` | ชื่อไฟล์แคชสำหรับจัดเก็บข้อมูลราคาที่ดาวน์โหลดมา |
+| `--cache` | `str` | `data/all_data.csv` | ชื่อไฟล์แคชสำหรับจัดเก็บข้อมูลราคาที่ดาวน์โหลดมา |
 | `--wolves` | `int` | `500` | จำนวนประชากรหมาป่าสำหรับตัวออปติไมเซอร์ EBGWO |
-| `--iterations` | `int` | `1000` | จำนวนรอบของการออปติไมซ์ (ทั้ง EBGWO และ ACO) |
+| `--iterations` | `int` | `1000` | จำนวนรอบของการออปติไมซ์ (EBGWO, ACO, PSO, CLPSO, APSO, LAPSO, ACOR และ CIAC) |
 | `--agents` | `int` | `500` | จำนวนมดสำหรับการเลือกสินทรัพย์ตัวแบบ ACO |
+| `--particles` | `int` | `500` | จำนวนอนุภาค/ประชากร/มดต่อเนื่องสำหรับออปติไมเซอร์ PSO, CLPSO, APSO, LAPSO, ACOR และ CIAC |
+| `--trials` | `int` | `5` | จำนวนการรันซ้ำต่อหนึ่งกลยุทธ์เพื่อหาค่าเฉลี่ยและส่วนเบี่ยงเบนมาตรฐาน (แสดงค่าเป็น Mean +- Std) |
 
 ### ตัวอย่างการทดสอบด่วน (Fast Test Run)
 ```bash
-uv run python run_pipeline.py --wolves 10 --iterations 5 --agents 5
+uv run python run_pipeline.py --wolves 5 --iterations 3 --agents 5 --trials 2
 ```
 
 ### การรันจำลองการผลิตจริงเต็มรูปแบบ (Full Production Run)
 ```bash
-uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
+uv run python run_pipeline.py --wolves 500 --iterations 1000 --agents 500 --trials 5
 ```
 
 ---
@@ -64,7 +105,10 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
     "ticker":   "^TNX",
     "fallback": 0.045
   },
-  "portfolio": { "value": 1000000 },
+  "portfolio": {
+    "value": 1000000,
+    "transaction_cost_rate": 0.001
+  },
   "currency":  { "fx_pairs": { "USD": "USDTHB=X" } },
   "quality_checks": {
     "max_abs_daily_return": 0.25,
@@ -72,6 +116,13 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
   }
 }
 ```
+
+### คอนฟิกูเรชันพอร์ตโฟลิโอและต้นทุนการทำธุรกรรม (Portfolio & Transaction Cost Configuration)
+
+| คีย์ (Key) | ประเภท | จุดประสงค์ |
+| :--- | :---: | :--- |
+| `value` | `float` | มูลค่าเริ่มต้นของพอร์ตโฟลิโอสำหรับการจัดสรรสัดส่วนสกุลเงินเป้าหมาย |
+| `transaction_cost_rate` | `float` | อัตราต้นทุนการทำธุรกรรม (Transaction Cost Rate) ที่จะถูกเรียกเก็บจากการปรับสัดส่วนน้ำหนักการลงทุน (เช่น `0.001` หมายถึง 0.1% หรือ 10 bps) |
 
 ### คอนฟิกูเรชันเกี่ยวกับวันที่ (Date Configuration)
 
@@ -86,6 +137,16 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
 
 ---
 
+## 4.5 แบบจำลองต้นทุนการทำธุรกรรม (Transaction Cost modeling)
+ต้นทุนการทำธุรกรรมจะถูกคำนวณในทุกๆ ขั้นตอนของการหมุนหน้าต่างทดสอบ OOS (Walk-Forward Step) โดยคิดจากอัตราการปรับเปลี่ยนพอร์ตโฟลิโอแบบสองทาง (Two-Way Turnover):
+$$\text{Turnover} = \sum_i |w_{\text{new}, i} - w_{\text{prev}, i}|$$
+$$\text{Cost} = \text{Turnover} \times \text{Transaction Cost Rate}$$
+
+ต้นทุนนี้จะถูกหักออกเชิงเรขาคณิต (Geometrically Deducted) จากผลตอบแทนของวันนอกกลุ่มตัวอย่างวันแรกในหน้าต่างจำลองรอบใหม่:
+$$R_{\text{adj}, 0} = (1 + R_0) \times (1 - \text{Cost}) - 1$$
+
+---
+
 ## 5. ผลลัพธ์จากการรันระบบ (Pipeline Outputs)
 
 ทุกการรันจะสร้างโฟลเดอร์ระบุเวลาขึ้นใน `output/run_{DD_MM_HH_MM}/` ซึ่งประกอบไปด้วย:
@@ -96,8 +157,11 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
 | `convergence.png` | กราฟแนวโน้มแสดงการลู่เข้าของความฟิตเฉลี่ยสำหรับออปติไมเซอร์ EBGWO |
 | `performance.png` | กราฟผลตอบแทนสะสมเปรียบเทียบในทุกกลยุทธ์ (ตลอดช่วงประเมินทั้งหมด) |
 | `performance_2025.png` | กราฟผลตอบแทนสะสมเปรียบเทียบเฉพาะในช่วงปี ค.ศ. 2025 |
-| `performance_report.md` | ตารางรายงานประสิทธิภาพการทดสอบย้อนหลัง เรียงจากสูงสุดไปต่ำสุดโดยยึดผลตอบแทนสะสมเป็นเกณฑ์ |
+| `performance_report.md` | ตารางรายงานประสิทธิภาพการทดสอบ OOS เปรียบเทียบแบบข้างเคียงระหว่าง **With Cost** และ **No Cost** โดยแสดงค่าเป็น `Mean +- Standard Deviation` จากการทดสอบซ้ำหลายรอบ |
 | `candles/` | โฟลเดอร์ย่อยเก็บภาพแท่งเทียนประเมินแนวโน้มและปริมาณการเทรดแยกตามแต่ละกลยุทธ์การเลือกสินทรัพย์ (6 แฟ้มภาพ) |
+| `selections/` | โฟลเดอร์ย่อยเก็บไฟล์ CSV รายการสินทรัพย์ที่ผ่านการคัดเลือกแยกตามแต่ละกลยุทธ์การเลือกสินทรัพย์ (เช่น `aco_cluster_selected.csv` เป็นต้น) |
+
+หมายเหตุ: การรันแยกตามออปติไมเซอร์เฉพาะตัว (`run_pipeline_aco_ebgwo.py` หรือ `run_pipeline_pso.py`) จะบันทึกข้อมูลผลลัพธ์ใน `output/aco_ebgwo_{DD_MM_HH_MM}/` หรือ `output/pso_{DD_MM_HH_MM}/` ตามลำดับ โดยมีโครงสร้างไฟล์ผลลัพธ์ที่เหมือนกันทุกประการ
 
 ---
 
@@ -278,11 +342,126 @@ uv run python tune_pipeline.py --param ST --values 0.2,0.3,0.4 --param2 lambda_e
 
 **ฟังก์ชันประเมินความเหมาะสม (Fitness):** `Sharpe + λ·H(w)/log(n) − penalty` โดยที่ `H(w)` คือเอนโทรปีของสัดส่วนเพื่อวัดความสม่ำเสมอในการลงน้ำหนัก และ `penalty` คือฟังก์ชันการทำโทษสัดส่วนเกินกำหนดสูงสุด
 
+**Returns:** `np.ndarray (n_assets,)` — น้ำหนักการลงทุนของแต่ละสินทรัพย์รวมกันเท่ากับ 1
+
 ---
 
 **`optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tensor, sector_labels, num_iterations, num_agents) → (weights, best_conv, avg_conv)`**
 
 โมเดลทำงานร่วมกันแบบ Co-evolutionary ACO + EBGWO โดยให้ ACO คัดกรองตัวสินทรัพย์เข้าในพอร์ตโฟลิโอ และให้ EBGWO จัดสัดส่วนน้ำหนักการลงทุนของกลุ่มสินทรัพย์ที่เลือกเหล่านั้นอย่างสอดคล้องตามข้อจำกัดด้านอุตสาหกรรม (`sector_labels`)
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (กราฟการลู่เข้า)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของประชากรในแต่ละรอบการวนลูป
+
+---
+
+**`optimize_weights_pso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การจัดหาสัดส่วนด้วยวิธี Particle Swarm Optimization (PSO) โดยมีเป้าหมายเพื่อหาจุดสูงสุดของ Sharpe Ratio ร่วมกับการควบคุมเอนโทรปี (Entropy Regularization) น้ำหนักความเฉื่อย (Inertia Weight) จะลดลงแบบเชิงเส้นเพื่อรักษาสมดุลระหว่างการสำรวจพื้นที่ใหม่ (exploration) และการขยายผลจุดที่ดีที่สุดเดิม (exploitation)
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ (Entropy regularization strength) |
+| `num_particles` | `500` | จำนวนอนุภาค (swarm size) ในระบบ |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+
+---
+
+**`optimize_weights_clpso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การจัดหาสัดส่วนด้วยวิธี Comprehensive Learning Particle Swarm Optimization (CLPSO) เพื่อให้มิติ (dimensions) ของแต่ละอนุภาคเรียนรู้จากตัวแทน (exemplars) ที่สร้างจากจุดส่วนตัวที่ดีที่สุดของอนุภาคอื่นๆ ในฝูง ช่วยรักษาความหลากหลายของประชากรและป้องกันการติดอยู่ในค่าที่เหมาะสมเฉพาะถิ่น (local optima)
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ |
+| `num_particles` | `500` | จำนวนอนุภาค (swarm size) ในระบบ |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+
+---
+
+**`optimize_weights_apso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การจัดหาสัดส่วนด้วยวิธี Adaptive Particle Swarm Optimization (APSO) โดยอ้างอิงหลักการประมาณสถานะวิวัฒนาการ (Evolutionary State Estimation: ESE) ปรับเปลี่ยนน้ำหนักความเฉื่อย $w$ และค่าสัมประสิทธิ์การเรียนรู้ $c_1, c_2$ ตามระยะห่างและการกระจายตัวของประชากรในแต่ละรอบการวนลูปโดยอัตโนมัติ
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ |
+| `num_particles` | `500` | จำนวนอนุภาค (swarm size) ในระบบ |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+
+---
+
+**`optimize_weights_lapso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การจัดหาสัดส่วนด้วยวิธี Landscape-Aware Adaptive Particle Swarm Optimization (LAPSO) (2022) ปรับเปลี่ยนน้ำหนักความเฉื่อย $w$ และค่าสัมประสิทธิ์การเรียนรู้ $c_1, c_2$ ในแต่ละรอบการวนลูปโดยใช้สัมประสิทธิ์ความสอดคล้องระหว่างค่าความเหมาะสมและระยะห่าง (Fitness Distance Correlation: FDC) เพื่อวิเคราะห์ลักษณะภูมิประเทศ (landscape modality) ของฟังก์ชันเป้าหมาย พร้อมระบบจัดการขอบเขตแบบสะท้อนกลับ (Mirrored Boundary Handling)
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ |
+| `num_particles` | `500` | จำนวนอนุภาค (swarm size) ในระบบ |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+
+---
+
+**`optimize_weights_acor(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การหาค่าน้ำหนักพอร์ตด้วยวิธี Ant Colony Optimization for Continuous Domains ($ACO_{\mathbb{R}}$ หรือ ACOR) ซึ่งทำการบันทึกและสืบทอดประชากรมดที่ดีที่สุดผ่านคลังเก็บชุดคำตอบ (Solution Archive) ขนาด $k$ เพื่อทำหน้าที่เป็นความทรงจำฟีโรโมน จากนั้นสร้างมดตัวใหม่ผ่านฟังก์ชันความน่าจะเป็นโดยใช้การแจกแจงแบบเกาส์เซียน (Gaussian Kernel) อิงลำดับคำตอบ และกระจายค้นหาตัวแปรด้วยส่วนเบี่ยงเบนมาตรฐานที่อัปเดตแบบไดนามิก
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ |
+| `num_particles` | `500` | จำนวนมด/คำตอบที่สร้างในแต่ละรอบการวนลูป |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+
+---
+
+**`optimize_weights_ciac(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+การหาค่าน้ำหนักพอร์ตด้วยวิธี Continuous Interacting Ant Colony (CIAC) [Dréo and Siarry, 2002] ที่ใช้แรงขับเคลื่อนปฏิสัมพันธ์สามรูปแบบในการสำรวจ Simplex ของน้ำหนักสินทรัพย์ ได้แก่ แรงดึงดูดฟีโรโมนสะสม (Stigmergic Attraction) ไปยังตำแหน่งที่ดีที่สุดในอดีต แรงดึงดูดโดยตรงระหว่างมด (Direct Interaction) ที่ดึงดูดมดที่ประสิทธิภาพต่ำเข้าหามดที่ประสิทธิภาพสูงกว่า และการสุ่มก้าวสำรวจ (Random Walk) ที่มีรัศมีการขยายตัวที่ลดลงตามกาลเวลา
+
+| พารามิเตอร์ | ค่าเริ่มต้น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | เพดานควบคุมสัดส่วนสูงสุดของการซื้อสินทรัพย์ตัวใดตัวหนึ่งในพอร์ต |
+| `lambda_ent` | `0.05` | สัมประสิทธิ์การควบคุมความสม่ำเสมอในสัดส่วนพอร์ตโฟลิโอ |
+| `num_particles` | `500` | จำนวนประชากรมดในรัง |
+| `iterations` | `1000` | จำนวนรอบของการทำงาน |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` น้ำหนักการลงทุนสุดท้ายของแต่ละหลักทรัพย์
+- `best_conv` — `list[float]` ค่า fitness ที่ดีที่สุดในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
+- `avg_conv` — `list[float]` ค่า fitness เฉลี่ยของกลุ่มในแต่ละรอบการวนลูป (ส่งคืนเฉพาะเมื่อ `return_convergence=True`)
 
 ---
 
@@ -299,6 +478,7 @@ uv run python tune_pipeline.py --param ST --values 0.2,0.3,0.4 --param2 lambda_e
 | `ann_vol` | ความผันผวนปรับค่าปี (Annualised Volatility) |
 | `sharpe` | อัตราส่วนความคุ้มค่าคุ้มความเสี่ยง (Sharpe Ratio) |
 | `max_dd` | ข้อมูลเปอร์เซ็นต์ขาดทุนสะสมสูงสุดจากจุดยอดเดิม (Maximum Drawdown) |
+| `cum_returns_arr` | ชุดข้อมูลผลตอบแทนสะสมรายวันตลอดช่วงเวลา |
 
 ---
 
@@ -306,15 +486,26 @@ uv run python tune_pipeline.py --param ST --values 0.2,0.3,0.4 --param2 lambda_e
 
 ทำหน้าที่จัดการการทดสอบประสิทธิภาพพอร์ตโดยแบ่งช่วงเวลาและเดินหน้าทดสอบไปเรื่อยๆ เพื่อวัดผลลัพธ์ของการปรับพอร์ตอย่างต่อเนื่องตามสภาวะตลาดจริง
 
-**เมธอด: `.run(portfolio_name, selected_stocks, lookback_window, step_size, num_iterations, num_agents, use_sector_constraints) → dict`**
+**เมธอด: `.run(portfolio_name, selected_stocks, lookback_window, step_size, num_iterations, num_agents, use_sector_constraints, optimizer, cost_rate) → dict`**
 
 | พารามิเตอร์การตั้งค่า | ค่าเริ่มต้น | คำอธิบาย |
 | :--- | :---: | :--- |
 | `lookback_window` | `252×3` | ขนาดหน้าต่างข้อมูลย้อนหลังสำหรับฟิตพอร์ตโฟลิโอ (วันทำการเทรด) |
 | `step_size` | `21×3` | ขนาดช่วงการเดินหน้ารันผลพอร์ตเพื่อปรับพอร์ตใหม่เป็นรอบไตรมาส |
+| `num_iterations` | `1000` | จำนวนรอบของการหาค่าพอร์ตน้ำหนักที่เหมาะสมต่อหน้าต่างจำลอง |
+| `num_agents` | `500` | จำนวนประชากรหมาป่า/มด/อนุภาค ในการประมวลผลต่อหน้าต่างจำลอง |
 | `use_sector_constraints` | `False` | การเปิดใช้ข้อจำกัดควบคุมสัดส่วนการลงทุนตามกลุ่มอุตสาหกรรมในโมเดล ACO+EBGWO |
+| `optimizer` | `'aco_ebgwo'` | ตัวระบุออปติไมเซอร์ที่เลือกใช้งาน (`'aco_ebgwo'` หรือ `'pso'`) |
+| `cost_rate` | `0.0` | อัตราค่าธรรมเนียม/ต้นทุนธุรกรรมที่ถูกคิดคำนวณจาก Turnover แบบสองทาง |
 
----
+**ผลลัพธ์ส่งออก (Keys ใน Dictionary):**
+- `Strategy`: ชื่อกลยุทธ์/พอร์ตโฟลิโอเป้าหมาย
+- `Cum Return` / `Ann Return` / `Ann Volatility` / `Sharpe Ratio` / `Max Drawdown` (แบบคิดค่าธรรมเนียมธุรกรรม)
+- `OOS_Returns_Array` / `OOS_Cum_Returns_Array` (อาเรย์ผลตอบแทนแบบคิดค่าธรรมเนียม OOS)
+- `Cum Return (No Cost)` / `Ann Return (No Cost)` / `Ann Volatility (No Cost)` / `Sharpe Ratio (No Cost)` / `Max Drawdown (No Cost)` (แบบไม่คิดค่าธรรมเนียมธุรกรรม)
+- `OOS_Returns_Array_No_Cost` / `OOS_Cum_Returns_Array_No_Cost` (อาเรย์ผลตอบแทนแบบไม่คิดค่าธรรมเนียม OOS)
+- `Avg_Best_Convergence` / `Avg_Avg_Convergence` (ประวัติการลู่เข้าของออปติไมเซอร์เฉลี่ย)
+- `Dates`: อาเรย์วันที่ (Datetime) ทั้งหมดในหน้าต่าง Walk-Forward ของช่วง OOS
 
 ### `cli.py` — การรายงานผ่าน Terminal ที่สวยงามด้วย Rich
 

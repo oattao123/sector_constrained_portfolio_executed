@@ -142,11 +142,15 @@ def run_tuning():
     
     results = []
     
+    portfolio_cfg = manager.settings.get("portfolio", {})
+    transaction_cost_rate = portfolio_cfg.get("transaction_cost_rate", 0.0)
+    
     backtester = WalkForwardBacktester(
         full_returns=returns,
         spy_full_returns=spy_full_returns,
         sector_map=manager.sector_map,
-        risk_free_rate=risk_free_rate
+        risk_free_rate=risk_free_rate,
+        transaction_cost_rate=transaction_cost_rate
     )
     
     lookback = data_cfg.get("lookback_window", 252*3)

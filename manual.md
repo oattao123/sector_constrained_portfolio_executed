@@ -24,6 +24,45 @@ GPU (CUDA) is auto-detected and used when available; falls back to CPU automatic
 uv run python run_pipeline.py
 ```
 
+### 2.5 Separate Optimizer Pipelines
+
+If you want to run the walk-forward simulation using a specific weight optimizer, you can use the dedicated scripts:
+
+**1. ACO + EBGWO Optimizer only:**
+```bash
+uv run python run_pipeline_aco_ebgwo.py
+```
+
+**2. PSO Optimizer only:**
+```bash
+uv run python run_pipeline_pso.py
+```
+
+**3. CLPSO Optimizer only:**
+```bash
+uv run python run_pipeline_clpso.py
+```
+
+**4. APSO Optimizer only:**
+```bash
+uv run python run_pipeline_apso.py
+```
+
+**5. LAPSO Optimizer only:**
+```bash
+uv run python run_pipeline_lapso.py
+```
+
+**6. ACOR Optimizer only:**
+```bash
+uv run python run_pipeline_acor.py
+```
+
+**7. CIAC Optimizer only:**
+```bash
+uv run python run_pipeline_ciac.py
+```
+
 ---
 
 ## 3. Command Line Arguments
@@ -32,19 +71,21 @@ uv run python run_pipeline.py
 | :--- | :---: | :---: | :--- |
 | `--settings` | `str` | `config/settings.json` | Path to settings JSON configuration file |
 | `--assets` | `str` | `config/assets.csv` | Path to asset universe CSV definition file |
-| `--cache` | `str` | `all_data.csv` | Cache file for downloaded price data |
+| `--cache` | `str` | `data/all_data.csv` | Cache file for downloaded price data |
 | `--wolves` | `int` | `500` | EBGWO population size |
-| `--iterations` | `int` | `1000` | Optimizer iterations (EBGWO & ACO) |
+| `--iterations` | `int` | `1000` | Optimizer iterations (EBGWO, ACO, PSO, CLPSO, APSO, LAPSO, ACOR & CIAC) |
 | `--agents` | `int` | `500` | Number of ants for ACO selectors |
+| `--particles` | `int` | `500` | Number of particles/swarm size/ants for PSO, CLPSO, APSO, LAPSO, ACOR, and CIAC |
+| `--trials` | `int` | `5` | Number of trials per strategy to run and average (to show mean and std dev error) |
 
 ### Fast Test Run
 ```bash
-uv run python run_pipeline.py --wolves 10 --iterations 5 --agents 5
+uv run python run_pipeline.py --wolves 5 --iterations 3 --agents 5 --trials 2
 ```
 
 ### Full Production Run
 ```bash
-uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
+uv run python run_pipeline.py --wolves 500 --iterations 1000 --agents 500 --trials 5
 ```
 
 ---
@@ -64,7 +105,10 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
     "ticker":   "^TNX",
     "fallback": 0.045
   },
-  "portfolio": { "value": 1000000 },
+  "portfolio": {
+    "value": 1000000,
+    "transaction_cost_rate": 0.001
+  },
   "currency":  { "fx_pairs": { "USD": "USDTHB=X" } },
   "quality_checks": {
     "max_abs_daily_return": 0.25,
@@ -72,6 +116,13 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
   }
 }
 ```
+
+### Portfolio & Transaction Cost Configuration
+
+| Key | Type | Purpose |
+| :--- | :---: | :--- |
+| `value` | `float` | Initial portfolio value for standard currency allocations. |
+| `transaction_cost_rate` | `float` | The rate of transaction costs charged on weight rebalancing turnover (e.g. `0.001` representing 0.1% or 10 bps). |
 
 ### Date Configuration
 
@@ -86,6 +137,16 @@ uv run python run_pipeline.py --wolves 1000 --iterations 1000 --agents 500
 
 ---
 
+## 4.5 Transaction Cost modeling
+Transaction costs are computed at each walk-forward step. The cost is calculated based on two-way turnover:
+$$\text{Turnover} = \sum_i |w_{\text{new}, i} - w_{\text{prev}, i}|$$
+$$\text{Cost} = \text{Turnover} \times \text{Transaction Cost Rate}$$
+
+This cost is geometrically deducted from the returns of the first out-of-sample day in the new window:
+$$R_{\text{adj}, 0} = (1 + R_0) \times (1 - \text{Cost}) - 1$$
+
+---
+
 ## 5. Pipeline Outputs
 
 Each run creates a **timestamped folder** `output/run_{DD_MM_HH_MM}/` containing:
@@ -96,8 +157,11 @@ Each run creates a **timestamped folder** `output/run_{DD_MM_HH_MM}/` containing
 | `convergence.png` | Average EBGWO fitness convergence curves |
 | `performance.png` | Cumulative return comparison (full period) |
 | `performance_2025.png` | Cumulative return comparison (Year 2025 only) |
-| `performance_report.md` | Backtest metrics table sorted by Cumulative Return |
+| `performance_report.md` | Backtest metrics table comparing **With Cost** vs **No Cost** side-by-side, reporting the `Mean +- Standard Deviation` across multiple trials. |
 | `candles/` | Subfolder containing candlestick charts for every selection strategy (6 files) |
+| `selections/` | Subfolder containing CSV files of the selected stock lists for every selection strategy (e.g. `aco_cluster_selected.csv`, etc.) |
+
+Note: Dedicated optimizer runs (`run_pipeline_aco_ebgwo.py` or `run_pipeline_pso.py`) create directories named `output/aco_ebgwo_{DD_MM_HH_MM}/` and `output/pso_{DD_MM_HH_MM}/` respectively, with identical output assets.
 
 ---
 
@@ -305,6 +369,114 @@ Co-evolutionary ACO + EBGWO: ACO selects which assets to include; EBGWO allocate
 
 ---
 
+**`optimize_weights_pso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Particle Swarm Optimization (PSO) for weight allocation. Maximizes entropy-regularized Sharpe Ratio. Inertia weight decays linearly to balance exploration and exploitation.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Swarm size |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
+**`optimize_weights_clpso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Comprehensive Learning Particle Swarm Optimization (CLPSO) for weight allocation. Dimensions learn from exemplars constructed from personal bests of the swarm to maintain diversity.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Swarm size |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
+**`optimize_weights_apso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Adaptive Particle Swarm Optimization (APSO) using Evolutionary State Estimation (ESE). Dynamically adapts inertia weight $w$ and learning rates $c_1, c_2$ at each iteration based on the population distribution.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Swarm size |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
+**`optimize_weights_lapso(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Landscape-Aware Adaptive Particle Swarm Optimization (LAPSO) (2022). Dynamically adapts the inertia weight $w$ and learning rates $c_1, c_2$ at each iteration based on Fitness Distance Correlation (FDC) to estimate landscape modality, and uses Mirrored Boundary Handling.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Swarm size |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
+**`optimize_weights_acor(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Ant Colony Optimization for Continuous Domains ($ACO_{\mathbb{R}}$ or ACOR). Maintains a solution archive of size $k$ representing pheromone memory, updates guides probabilistically based on rank-based Gaussian kernels, and samples new solution vectors with dynamically adjusted standard deviations.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Swarm size / guide generator count |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
+**`optimize_weights_ciac(train_returns_gpu, max_weight, lambda_ent, num_particles, iterations) → (weights, best_conv, avg_conv)`**
+
+Continuous Interacting Ant Colony (CIAC) [Dréo and Siarry, 2002]. Utilizes three interaction forces to navigate the weight simplex: Stigmergic Attraction (luring ants toward historical high-pheromone spots), Direct Interaction (attracting lower-fitness ants toward superior colony members), and a decaying Random Walk exploration.
+
+| Param | Default | Description |
+| :--- | :---: | :--- |
+| `max_weight` | `0.1` | Maximum weight per asset (concentration limit) |
+| `lambda_ent` | `0.05` | Entropy regularization strength |
+| `num_particles` | `500` | Ant population size |
+| `iterations` | `1000` | Training iterations |
+
+**Returns:**
+- `weights` — `np.ndarray (n_assets,)` final portfolio weights
+- `best_conv` — `list[float]` best fitness per iteration (only if `return_convergence=True`)
+- `avg_conv` — `list[float]` average swarm fitness per iteration (only if `return_convergence=True`)
+
+---
+
 ### `backtest.py` — Walk-Forward Engine
 
 **`compute_metrics(returns, risk_free_rate) → dict`**
@@ -326,17 +498,26 @@ Computes portfolio performance metrics from a daily returns array.
 
 Executes rolling window walk-forward optimization.
 
-**`.run(portfolio_name, selected_stocks, lookback_window, step_size, num_iterations, num_agents, use_sector_constraints) → dict`**
+**`.run(portfolio_name, selected_stocks, lookback_window, step_size, num_iterations, num_agents, use_sector_constraints, optimizer, cost_rate) → dict`**
 
 | Param | Default | Description |
 | :--- | :---: | :--- |
 | `lookback_window` | `252×3` | In-sample training window (trading days) |
 | `step_size` | `21×3` | Out-of-sample test window (quarterly rebalance) |
 | `num_iterations` | `1000` | Optimizer iterations per window |
-| `num_agents` | `500` | Optimizer population per window |
+| `num_agents` | `500` | Optimizer population/particles per window |
 | `use_sector_constraints` | `False` | Enforce sector diversification via ACO+EBGWO |
+| `optimizer` | `'aco_ebgwo'` | Weight optimization backend (`'aco_ebgwo'` or `'pso'`) |
+| `cost_rate` | `0.0` | Transaction cost rate charged on two-way turnover |
 
-**Returns dict keys:** `Strategy`, `Cum Return`, `Ann Return`, `Ann Volatility`, `Sharpe Ratio`, `Max Drawdown`, `OOS_Returns_Array`, `OOS_Cum_Returns_Array`, `Avg_Best_Convergence`, `Avg_Avg_Convergence`, `Dates`.
+**Returns dict keys:**
+- `Strategy`: Strategy name string
+- `Cum Return` / `Ann Return` / `Ann Volatility` / `Sharpe Ratio` / `Max Drawdown` (With transaction cost)
+- `OOS_Returns_Array` / `OOS_Cum_Returns_Array` (With transaction cost returns)
+- `Cum Return (No Cost)` / `Ann Return (No Cost)` / `Ann Volatility (No Cost)` / `Sharpe Ratio (No Cost)` / `Max Drawdown (No Cost)` (Without transaction cost)
+- `OOS_Returns_Array_No_Cost` / `OOS_Cum_Returns_Array_No_Cost` (Without transaction cost returns)
+- `Avg_Best_Convergence` / `Avg_Avg_Convergence` (Optimizer convergence history)
+- `Dates`: Array of Pandas Datetime values for the walk-forward period
 
 ---
 

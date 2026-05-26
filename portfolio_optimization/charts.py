@@ -50,7 +50,7 @@ def save_candlestick_grid(
     max_cols: int = 5,
     candle_period: str = "W",          # 'D' daily | 'W' weekly | 'ME' monthly
     lookback_bars: int = 52,            # how many candles to show
-    sector_map: dict = None,
+    sector_map: dict = None  ,  # ty:ignore[invalid-parameter-default]
 ):
     """
     Plots a candlestick grid for all assets selected by a given strategy and saves as PNG.

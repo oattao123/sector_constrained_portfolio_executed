@@ -51,7 +51,87 @@ def parse_args():
     parser.add_argument("--iterations", type=int, default=1000, help="Number of iterations for optimizers")
     parser.add_argument("--agents", type=int, default=500, help="Number of agents for ACO")
     parser.add_argument("--particles", type=int, default=500, help="Number of particles for PSO")
+    parser.add_argument("--trials", type=int, default=5, help="Number of trials per strategy to run and average")
     return parser.parse_args()
+
+
+def run_backtest_with_trials(backtester, portfolio_name, selected_stocks, trials, **run_kwargs):
+    """Runs a backtest multiple times, logs each trial, and returns averaged results."""
+    logger.info(f"[{portfolio_name}] Running {trials} trials to compute mean and error...")
+
+    trial_results = []
+    for trial in range(trials):
+        logger.info(f"  --> Trial {trial + 1}/{trials}...")
+        res = backtester.run(
+            portfolio_name=f"{portfolio_name}_trial_{trial}",
+            selected_stocks=selected_stocks,
+            **run_kwargs
+        )
+        trial_results.append(res)
+
+    ddof = 1 if trials > 1 else 0
+
+    # Aggregate results
+    cums = [r["Cum Return"] for r in trial_results]
+    anns = [r["Ann Return"] for r in trial_results]
+    vols = [r["Ann Volatility"] for r in trial_results]
+    sharpes = [r["Sharpe Ratio"] for r in trial_results]
+    dds = [r["Max Drawdown"] for r in trial_results]
+
+    # No cost fields
+    cums_nc = [r["Cum Return (No Cost)"] for r in trial_results]
+    anns_nc = [r["Ann Return (No Cost)"] for r in trial_results]
+    vols_nc = [r["Ann Volatility (No Cost)"] for r in trial_results]
+    sharpes_nc = [r["Sharpe Ratio (No Cost)"] for r in trial_results]
+    dds_nc = [r["Max Drawdown (No Cost)"] for r in trial_results]
+
+    # Arrays - we average them element-wise
+    avg_oos_returns = np.mean([r["OOS_Returns_Array"] for r in trial_results], axis=0)
+    avg_oos_cum_returns = np.mean([r["OOS_Cum_Returns_Array"] for r in trial_results], axis=0)
+
+    avg_oos_returns_nc = np.mean([r["OOS_Returns_Array_No_Cost"] for r in trial_results], axis=0)
+    avg_oos_cum_returns_nc = np.mean([r["OOS_Cum_Returns_Array_No_Cost"] for r in trial_results], axis=0)
+
+    # Convergence curves
+    avg_best_conv = np.mean([r["Avg_Best_Convergence"] for r in trial_results], axis=0)
+    avg_avg_conv = np.mean([r["Avg_Avg_Convergence"] for r in trial_results], axis=0)
+
+    return {
+        "Strategy": portfolio_name,
+        "Cum Return": np.mean(cums),
+        "Cum Return Std": np.std(cums, ddof=ddof),
+        "Ann Return": np.mean(anns),
+        "Ann Return Std": np.std(anns, ddof=ddof),
+        "Ann Volatility": np.mean(vols),
+        "Ann Volatility Std": np.std(vols, ddof=ddof),
+        "Sharpe Ratio": np.mean(sharpes),
+        "Sharpe Ratio Std": np.std(sharpes, ddof=ddof),
+        "Max Drawdown": np.mean(dds),
+        "Max Drawdown Std": np.std(dds, ddof=ddof),
+
+        "OOS_Returns_Array": avg_oos_returns,
+        "OOS_Cum_Returns_Array": avg_oos_cum_returns,
+
+        # No cost fields
+        "Cum Return (No Cost)": np.mean(cums_nc),
+        "Cum Return (No Cost) Std": np.std(cums_nc, ddof=ddof),
+        "Ann Return (No Cost)": np.mean(anns_nc),
+        "Ann Return (No Cost) Std": np.std(anns_nc, ddof=ddof),
+        "Ann Volatility (No Cost)": np.mean(vols_nc),
+        "Ann Volatility (No Cost) Std": np.std(vols_nc, ddof=ddof),
+        "Sharpe Ratio (No Cost)": np.mean(sharpes_nc),
+        "Sharpe Ratio (No Cost) Std": np.std(sharpes_nc, ddof=ddof),
+        "Max Drawdown (No Cost)": np.mean(dds_nc),
+        "Max Drawdown (No Cost) Std": np.std(dds_nc, ddof=ddof),
+
+        "OOS_Returns_Array_No_Cost": avg_oos_returns_nc,
+        "OOS_Cum_Returns_Array_No_Cost": avg_oos_cum_returns_nc,
+
+        "Avg_Best_Convergence": avg_best_conv,
+        "Avg_Avg_Convergence": avg_avg_conv,
+        "Dates": trial_results[0]["Dates"],
+        "trial_results": trial_results
+    }
 
 
 def main():
@@ -176,15 +256,23 @@ def main():
         "ACO Cluster Selected": aco_cl_sel,
     }
 
+    # 4a. Save selected stocks to CSV in output directory
+    selections_dir = os.path.join(out_dir, "selections")
+    os.makedirs(selections_dir, exist_ok=True)
+    for name, df in portfolio_dfs.items():
+        filename = name.lower().replace(" ", "_") + ".csv"
+        df.to_csv(os.path.join(selections_dir, filename), index=False)
+    logger.info(f"Saved selected asset lists to {selections_dir}/")
+
     # 4b. Save candlestick charts for each selection method
     logger.info("Generating candlestick charts for each selection strategy...")
     candle_start = data_cfg.get("insample_end_date") or data_cfg.get("start_date", "2015-01-01")
     candle_end   = data_cfg.get("outsample_end_date") or data_cfg.get("end_date", "2026-03-20")
-    
+
     # Create subfolder inside out_dir
     candle_dir = os.path.join(out_dir, "candles")
     os.makedirs(candle_dir, exist_ok=True)
-    
+
     for strat_name, strat_df in portfolio_dfs.items():
         if strat_df.empty:
             continue
@@ -204,35 +292,130 @@ def main():
 
     # 5. Walk-Forward Backtester
     logger.info("Initializing Walk-Forward Backtester...")
+    portfolio_cfg = manager.settings.get("portfolio", {})
+    transaction_cost_rate = portfolio_cfg.get("transaction_cost_rate", 0.0)
     backtester = WalkForwardBacktester(
         full_returns=returns,
         spy_full_returns=spy_full_returns,
         sector_map=manager.sector_map,
         risk_free_rate=risk_free_rate,
+        transaction_cost_rate=transaction_cost_rate,
     )
 
     all_results = []
 
-    # A. Run walk-forward with EBGWO weight optimization for each static selection strategy
+    # A. Run walk-forward with EBGWO, PSO, CLPSO, APSO, and LAPSO for each static selection strategy
     for name, df in portfolio_dfs.items():
         if df.empty:
             logger.warning(f"Portfolio {name} is empty. Skipping backtest.")
             continue
         tickers_list = df["Ticker"].tolist()
-        res = backtester.run(
-            portfolio_name=name,
+        
+        # 1. EBGWO
+        logger.info(f"Running EBGWO optimization on {name}...")
+        res_ebgwo = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"EBGWO ({name})",
             selected_stocks=tickers_list,
+            trials=args.trials,
             num_iterations=args.iterations,
             num_agents=args.wolves,
             use_sector_constraints=False,
+            optimizer='aco_ebgwo',
         )
-        all_results.append(res)
+        all_results.append(res_ebgwo)
+        
+        # 2. PSO
+        logger.info(f"Running PSO optimization on {name}...")
+        res_pso = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"PSO ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='pso',
+        )
+        all_results.append(res_pso)
+        
+        # 3. CLPSO
+        logger.info(f"Running CLPSO optimization on {name}...")
+        res_clpso = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"CLPSO ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='clpso',
+        )
+        all_results.append(res_clpso)
+        
+        # 4. APSO
+        logger.info(f"Running APSO optimization on {name}...")
+        res_apso = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"APSO ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='apso',
+        )
+        all_results.append(res_apso)
+        
+        # 5. LAPSO
+        logger.info(f"Running LAPSO optimization on {name}...")
+        res_lapso = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"LAPSO ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='lapso',
+        )
+        all_results.append(res_lapso)
+
+        # 6. ACOR
+        logger.info(f"Running ACOR optimization on {name}...")
+        res_acor = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"ACOR ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='acor',
+        )
+        all_results.append(res_acor)
+
+        # 7. CIAC
+        logger.info(f"Running CIAC optimization on {name}...")
+        res_ciac = run_backtest_with_trials(
+            backtester=backtester,
+            portfolio_name=f"CIAC ({name})",
+            selected_stocks=tickers_list,
+            trials=args.trials,
+            num_iterations=args.iterations,
+            num_agents=args.particles,
+            use_sector_constraints=False,
+            optimizer='ciac',
+        )
+        all_results.append(res_ciac)
 
     # B. Run dynamic co-evolutionary ACO + EBGWO optimization (Full Universe)
     logger.info("Running dynamic co-evolutionary ACO+EBGWO walk-forward optimization...")
-    dynamic_res = backtester.run(
+    dynamic_res = run_backtest_with_trials(
+        backtester=backtester,
         portfolio_name="Dynamic ACO+EBGWO Portfolio",
         selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
         num_iterations=args.iterations,
         num_agents=args.wolves,
         use_sector_constraints=True,
@@ -242,15 +425,87 @@ def main():
 
     # C. Run PSO walk-forward optimization (Full Universe)
     logger.info("Running PSO walk-forward optimization...")
-    pso_res = backtester.run(
+    pso_res = run_backtest_with_trials(
+        backtester=backtester,
         portfolio_name="PSO Portfolio",
         selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
         num_iterations=args.iterations,
         num_agents=args.particles,
         use_sector_constraints=False,
         optimizer='pso',
     )
     all_results.append(pso_res)
+
+    # D. Run CLPSO walk-forward optimization (Full Universe)
+    logger.info("Running CLPSO walk-forward optimization...")
+    clpso_res = run_backtest_with_trials(
+        backtester=backtester,
+        portfolio_name="CLPSO Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='clpso',
+    )
+    all_results.append(clpso_res)
+
+    # E. Run APSO walk-forward optimization (Full Universe)
+    logger.info("Running APSO walk-forward optimization...")
+    apso_res = run_backtest_with_trials(
+        backtester=backtester,
+        portfolio_name="APSO Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='apso',
+    )
+    all_results.append(apso_res)
+
+    # F. Run LAPSO walk-forward optimization (Full Universe)
+    logger.info("Running LAPSO walk-forward optimization...")
+    lapso_res = run_backtest_with_trials(
+        backtester=backtester,
+        portfolio_name="LAPSO Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='lapso',
+    )
+    all_results.append(lapso_res)
+
+    # G. Run ACOR walk-forward optimization (Full Universe)
+    logger.info("Running ACOR walk-forward optimization...")
+    acor_res = run_backtest_with_trials(
+        backtester=backtester,
+        portfolio_name="ACOR Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='acor',
+    )
+    all_results.append(acor_res)
+
+    # H. Run CIAC walk-forward optimization (Full Universe)
+    logger.info("Running CIAC walk-forward optimization...")
+    ciac_res = run_backtest_with_trials(
+        backtester=backtester,
+        portfolio_name="CIAC Portfolio",
+        selected_stocks=valid_tickers.tolist(),
+        trials=args.trials,
+        num_iterations=args.iterations,
+        num_agents=args.particles,
+        use_sector_constraints=False,
+        optimizer='ciac',
+    )
+    all_results.append(ciac_res)
 
     # C. Calculate SPY Benchmark Metrics
     lookback_window = 252 * 3
@@ -278,17 +533,60 @@ def main():
     mask_2025 = trade_dates.year == 2025
     if mask_2025.any():
         results_2025 = []
+        ddof = 1 if args.trials > 1 else 0
         for r in all_results:
-            port_ret_25 = r["OOS_Returns_Array"][mask_2025]
-            m25 = compute_metrics(port_ret_25, risk_free_rate)
+            trials_2025 = []
+            if "trial_results" in r:
+                for t_res in r["trial_results"]:
+                    t_ret_25 = t_res["OOS_Returns_Array"][mask_2025]
+                    t_m25 = compute_metrics(t_ret_25, risk_free_rate)
+
+                    t_ret_25_nc = t_res["OOS_Returns_Array_No_Cost"][mask_2025]
+                    t_m25_nc = compute_metrics(t_ret_25_nc, risk_free_rate)
+
+                    trials_2025.append((t_m25, t_m25_nc))
+            else:
+                # single trial (e.g. SPY benchmark)
+                t_ret_25 = r["OOS_Returns_Array"][mask_2025]
+                t_m25 = compute_metrics(t_ret_25, risk_free_rate)
+                trials_2025.append((t_m25, t_m25))
+
+            cums = [t[0]["cum_return"] for t in trials_2025]
+            anns = [t[0]["ann_return"] for t in trials_2025]
+            vols = [t[0]["ann_vol"] for t in trials_2025]
+            sharpes = [t[0]["sharpe"] for t in trials_2025]
+            dds = [t[0]["max_dd"] for t in trials_2025]
+
+            cums_nc = [t[1]["cum_return"] for t in trials_2025]
+            anns_nc = [t[1]["ann_return"] for t in trials_2025]
+            vols_nc = [t[1]["ann_vol"] for t in trials_2025]
+            sharpes_nc = [t[1]["sharpe"] for t in trials_2025]
+            dds_nc = [t[1]["max_dd"] for t in trials_2025]
+
             results_2025.append(
                 {
                     "Strategy": r["Strategy"],
-                    "Cum Return": m25["cum_return"],
-                    "Ann Return": m25["ann_return"],
-                    "Ann Volatility": m25["ann_vol"],
-                    "Sharpe Ratio": m25["sharpe"],
-                    "Max Drawdown": m25["max_dd"],
+                    "Cum Return": np.mean(cums),
+                    "Cum Return Std": np.std(cums, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Ann Return": np.mean(anns),
+                    "Ann Return Std": np.std(anns, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Ann Volatility": np.mean(vols),
+                    "Ann Volatility Std": np.std(vols, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Sharpe Ratio": np.mean(sharpes),
+                    "Sharpe Ratio Std": np.std(sharpes, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Max Drawdown": np.mean(dds),
+                    "Max Drawdown Std": np.std(dds, ddof=ddof) if "trial_results" in r else 0.0,
+
+                    "Cum Return (No Cost)": np.mean(cums_nc),
+                    "Cum Return (No Cost) Std": np.std(cums_nc, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Ann Return (No Cost)": np.mean(anns_nc),
+                    "Ann Return (No Cost) Std": np.std(anns_nc, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Ann Volatility (No Cost)": np.mean(vols_nc),
+                    "Ann Volatility (No Cost) Std": np.std(vols_nc, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Sharpe Ratio (No Cost)": np.mean(sharpes_nc),
+                    "Sharpe Ratio (No Cost) Std": np.std(sharpes_nc, ddof=ddof) if "trial_results" in r else 0.0,
+                    "Max Drawdown (No Cost)": np.mean(dds_nc),
+                    "Max Drawdown (No Cost) Std": np.std(dds_nc, ddof=ddof) if "trial_results" in r else 0.0,
                 }
             )
         spy_ret_25 = spy_returns_arr[mask_2025]
@@ -323,35 +621,120 @@ def main():
         output_path=os.path.join(out_dir, "performance_report.md"),
     )
 
+    # 9a. Save Markdown Performance Report and Plots for each optimizer inside its subfolder
+    optimizers_to_save = {
+        "ebgwo": lambda name: "EBGWO" in name,
+        "pso": lambda name: "PSO" in name and "CLPSO" not in name and "APSO" not in name and "LAPSO" not in name,
+        "clpso": lambda name: "CLPSO" in name,
+        "apso": lambda name: "APSO" in name,
+        "lapso": lambda name: "LAPSO" in name,
+        "acor": lambda name: "ACOR" in name,
+        "ciac": lambda name: "CIAC" in name,
+    }
+
+    for opt_name, filter_func in optimizers_to_save.items():
+        opt_results = [r for r in all_results if filter_func(r["Strategy"])]
+        opt_results_2025 = [r for r in results_2025 if filter_func(r["Strategy"])] if mask_2025.any() else None
+        
+        # Create optimizer subfolder
+        opt_dir = os.path.join(out_dir, opt_name)
+        os.makedirs(opt_dir, exist_ok=True)
+        
+        # Save performance report
+        save_markdown_report(
+            all_results=opt_results,
+            spy_res=spy_res,
+            results_2025=opt_results_2025,
+            spy_res_25=spy_res_25 if mask_2025.any() else None,
+            output_path=os.path.join(opt_dir, "performance_report.md"),
+            optimizer_name=opt_name,
+        )
+        
+        # Save convergence plot
+        save_convergence_plot(
+            opt_results,
+            output_path=os.path.join(opt_dir, "convergence.png")
+        )
+        
+        # Save performance plots
+        save_performance_plot(
+            opt_results,
+            spy_metrics["cum_returns_arr"],
+            trade_dates,
+            output_path=os.path.join(opt_dir, "performance.png")
+        )
+        
+        if mask_2025.any():
+            save_performance_plot_2025(
+                opt_results,
+                spy_returns_arr,
+                trade_dates,
+                output_path=os.path.join(opt_dir, "performance_2025.png")
+            )
+
     logger.info("Pipeline executed successfully nya~! (=^･ω･^=)")
 
 
-def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=None, output_path="performance_report.md"):
-    """Saves the backtest performance metrics tables to a Markdown file, sorted by Cum Return (excluding SPY)."""
-    # Sort all_results by 'Cum Return' in descending order
+def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=None, output_path="performance_report.md", optimizer_name=None):
+    """Saves the backtest performance metrics tables to a Markdown file, comparing with and without transaction costs."""
+    # Sort all_results by 'Cum Return' (with cost) in descending order
     sorted_all = sorted(all_results, key=lambda x: x.get("Cum Return", 0.0), reverse=True)
 
+    title = f"Performance Report: Walk-Forward Backtesting Metrics ({optimizer_name.upper()})" if optimizer_name else "Performance Report: Walk-Forward Backtesting Metrics"
+
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("# Performance Report: Walk-Forward Backtesting Metrics\n\n")
-        f.write("This report summarizes the walk-forward out-of-sample (OOS) simulation performance metrics.\n\n")
+        f.write(f"# {title}\n\n")
+        f.write("This report summarizes the walk-forward out-of-sample (OOS) simulation performance metrics, comparing results with and without transaction costs. Metrics display Mean ± Standard Deviation across trials.\n\n")
 
         f.write("## 1. Walk-Forward Performance Comparison (Full Period)\n\n")
-        f.write("| Strategy Name | Cum Return | Ann Return | Ann Vol | Sharpe Ratio | Max Drawdown |\n")
-        f.write("| :--- | :---: | :---: | :---: | :---: | :---: |\n")
+        f.write("| Strategy Name | Scenario | Cum Return | Ann Return | Ann Vol | Sharpe Ratio | Max Drawdown |\n")
+        f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n")
 
         for r in sorted_all:
+            cum_std = r.get("Cum Return Std", 0.0)
+            ann_std = r.get("Ann Return Std", 0.0)
+            vol_std = r.get("Ann Volatility Std", 0.0)
+            sharpe_std = r.get("Sharpe Ratio Std", 0.0)
+            max_dd_std = r.get("Max Drawdown Std", 0.0)
+
+            cum_nc_std = r.get("Cum Return (No Cost) Std", 0.0)
+            ann_nc_std = r.get("Ann Return (No Cost) Std", 0.0)
+            vol_nc_std = r.get("Ann Volatility (No Cost) Std", 0.0)
+            sharpe_nc_std = r.get("Sharpe Ratio (No Cost) Std", 0.0)
+            max_dd_nc_std = r.get("Max Drawdown (No Cost) Std", 0.0)
+
             vol_val = r.get("Ann Volatility", r.get("Ann Vol", 0.0))
             sharpe_val = r.get("Sharpe Ratio", r.get("Sharpe", 0.0))
             max_dd_val = r.get("Max Drawdown", r.get("Max DD", 0.0))
+
+            vol_nc = r.get("Ann Volatility (No Cost)", r.get("Ann Vol (No Cost)", 0.0))
+            sharpe_nc = r.get("Sharpe Ratio (No Cost)", r.get("Sharpe (No Cost)", 0.0))
+            max_dd_nc = r.get("Max Drawdown (No Cost)", r.get("Max DD (No Cost)", 0.0))
+
+            cum_str = f"{r['Cum Return']:.2%}" + (f" ± {cum_std:.2%}" if cum_std > 0 else "")
+            ann_str = f"{r['Ann Return']:.2%}" + (f" ± {ann_std:.2%}" if ann_std > 0 else "")
+            vol_str = f"{vol_val:.2%}" + (f" ± {vol_std:.2%}" if vol_std > 0 else "")
+            sharpe_str = f"{sharpe_val:.4f}" + (f" ± {sharpe_std:.4f}" if sharpe_std > 0 else "")
+            max_dd_str = f"{max_dd_val:.2%}" + (f" ± {max_dd_std:.2%}" if max_dd_std > 0 else "")
+
+            cum_nc_str = f"{r['Cum Return (No Cost)']:.2%}" + (f" ± {cum_nc_std:.2%}" if cum_nc_std > 0 else "")
+            ann_nc_str = f"{r['Ann Return (No Cost)']:.2%}" + (f" ± {ann_nc_std:.2%}" if ann_nc_std > 0 else "")
+            vol_nc_str = f"{vol_nc:.2%}" + (f" ± {vol_nc_std:.2%}" if vol_nc_std > 0 else "")
+            sharpe_nc_str = f"{sharpe_nc:.4f}" + (f" ± {sharpe_nc_std:.4f}" if sharpe_nc_std > 0 else "")
+            max_dd_nc_str = f"{max_dd_nc:.2%}" + (f" ± {max_dd_nc_std:.2%}" if max_dd_nc_std > 0 else "")
+
             f.write(
-                f"| **{r['Strategy']}** | {r['Cum Return']:.2%} | {r['Ann Return']:.2%} | {vol_val:.2%} | {sharpe_val:.4f} | {max_dd_val:.2%} |\n"
+                f"| **{r['Strategy']}** | **With Cost** | **{cum_str}** | **{ann_str}** | {vol_str} | **{sharpe_str}** | {max_dd_str} |\n"
+            )
+            f.write(
+                f"| | *No Cost* | {cum_nc_str} | {ann_nc_str} | {vol_nc_str} | {sharpe_nc_str} | {max_dd_nc_str} |\n"
             )
 
         spy_vol_val = spy_res.get("Ann Volatility", spy_res.get("Ann Vol", 0.0))
         spy_sharpe_val = spy_res.get("Sharpe Ratio", spy_res.get("Sharpe", 0.0))
         spy_max_dd_val = spy_res.get("Max Drawdown", spy_res.get("Max DD", 0.0))
         f.write(
-            f"| *{spy_res['Strategy']}* | {spy_res['Cum Return']:.2%} | {spy_res['Ann Return']:.2%} | {spy_vol_val:.2%} | {spy_sharpe_val:.4f} | {spy_max_dd_val:.2%} |\n\n"
+            f"| *{spy_res['Strategy']}* | *N/A (No Cost)* | {spy_res['Cum Return']:.2%} | {spy_res['Ann Return']:.2%} | {spy_vol_val:.2%} | {spy_sharpe_val:.4f} | {spy_max_dd_val:.2%} |\n\n"
         )
 
         if results_2025 and spy_res_25:
@@ -359,21 +742,54 @@ def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=Non
             sorted_2025 = sorted(results_2025, key=lambda x: x.get("Cum Return", 0.0), reverse=True)
 
             f.write("## 2. Walk-Forward Performance Comparison (Year 2025 Only)\n\n")
-            f.write("| Strategy Name | Cum Return | Ann Return | Ann Vol | Sharpe Ratio | Max Drawdown |\n")
-            f.write("| :--- | :---: | :---: | :---: | :---: | :---: |\n")
+            f.write("| Strategy Name | Scenario | Cum Return | Ann Return | Ann Vol | Sharpe Ratio | Max Drawdown |\n")
+            f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n")
+
             for r in sorted_2025:
+                cum_std = r.get("Cum Return Std", 0.0)
+                ann_std = r.get("Ann Return Std", 0.0)
+                vol_std = r.get("Ann Volatility Std", 0.0)
+                sharpe_std = r.get("Sharpe Ratio Std", 0.0)
+                max_dd_std = r.get("Max Drawdown Std", 0.0)
+
+                cum_nc_std = r.get("Cum Return (No Cost) Std", 0.0)
+                ann_nc_std = r.get("Ann Return (No Cost) Std", 0.0)
+                vol_nc_std = r.get("Ann Volatility (No Cost) Std", 0.0)
+                sharpe_nc_std = r.get("Sharpe Ratio (No Cost) Std", 0.0)
+                max_dd_nc_std = r.get("Max Drawdown (No Cost) Std", 0.0)
+
                 vol_val = r.get("Ann Volatility", r.get("Ann Vol", 0.0))
                 sharpe_val = r.get("Sharpe Ratio", r.get("Sharpe", 0.0))
                 max_dd_val = r.get("Max Drawdown", r.get("Max DD", 0.0))
+
+                vol_nc = r.get("Ann Volatility (No Cost)", r.get("Ann Vol (No Cost)", 0.0))
+                sharpe_nc = r.get("Sharpe Ratio (No Cost)", r.get("Sharpe (No Cost)", 0.0))
+                max_dd_nc = r.get("Max Drawdown (No Cost)", r.get("Max DD (No Cost)", 0.0))
+
+                cum_str = f"{r['Cum Return']:.2%}" + (f" ± {cum_std:.2%}" if cum_std > 0 else "")
+                ann_str = f"{r['Ann Return']:.2%}" + (f" ± {ann_std:.2%}" if ann_std > 0 else "")
+                vol_str = f"{vol_val:.2%}" + (f" ± {vol_std:.2%}" if vol_std > 0 else "")
+                sharpe_str = f"{sharpe_val:.4f}" + (f" ± {sharpe_std:.4f}" if sharpe_std > 0 else "")
+                max_dd_str = f"{max_dd_val:.2%}" + (f" ± {max_dd_std:.2%}" if max_dd_std > 0 else "")
+
+                cum_nc_str = f"{r['Cum Return (No Cost)']:.2%}" + (f" ± {cum_nc_std:.2%}" if cum_nc_std > 0 else "")
+                ann_nc_str = f"{r['Ann Return (No Cost)']:.2%}" + (f" ± {ann_nc_std:.2%}" if ann_nc_std > 0 else "")
+                vol_nc_str = f"{vol_nc:.2%}" + (f" ± {vol_nc_std:.2%}" if vol_nc_std > 0 else "")
+                sharpe_nc_str = f"{sharpe_nc:.4f}" + (f" ± {sharpe_nc_std:.4f}" if sharpe_nc_std > 0 else "")
+                max_dd_nc_str = f"{max_dd_nc:.2%}" + (f" ± {max_dd_nc_std:.2%}" if max_dd_nc_std > 0 else "")
+
                 f.write(
-                    f"| **{r['Strategy']}** | {r['Cum Return']:.2%} | {r['Ann Return']:.2%} | {vol_val:.2%} | {sharpe_val:.4f} | {max_dd_val:.2%} |\n"
+                    f"| **{r['Strategy']}** | **With Cost** | **{cum_str}** | **{ann_str}** | {vol_str} | **{sharpe_str}** | {max_dd_str} |\n"
+                )
+                f.write(
+                    f"| | *No Cost* | {cum_nc_str} | {ann_nc_str} | {vol_nc_str} | {sharpe_nc_str} | {max_dd_nc_str} |\n"
                 )
 
             spy_vol_25 = spy_res_25.get("Ann Volatility", spy_res_25.get("Ann Vol", 0.0))
             spy_sharpe_25 = spy_res_25.get("Sharpe Ratio", spy_res_25.get("Sharpe", 0.0))
             spy_max_dd_25 = spy_res_25.get("Max Drawdown", spy_res_25.get("Max DD", 0.0))
             f.write(
-                f"| *{spy_res_25['Strategy']}* | {spy_res_25['Cum Return']:.2%} | {spy_res_25['Ann Return']:.2%} | {spy_vol_25:.2%} | {spy_sharpe_25:.4f} | {spy_max_dd_25:.2%} |\n"
+                f"| *{spy_res_25['Strategy']}* | *N/A (No Cost)* | {spy_res_25['Cum Return']:.2%} | {spy_res_25['Ann Return']:.2%} | {spy_vol_25:.2%} | {spy_sharpe_25:.4f} | {spy_max_dd_25:.2%} |\n"
             )
     logger.info(f"Saved performance report to {output_path}")
 

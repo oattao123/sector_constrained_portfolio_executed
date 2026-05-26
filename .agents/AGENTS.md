@@ -14,10 +14,20 @@
 - All returns sorting pinned SPY (S&P 500 Benchmark) to the bottom of the table. Other strategies are sorted descending by Cumulative Return (`Cum Return`).
 
 ## Pipeline & Outputs Structure
-- Running `run_pipeline.py` creates a timestamped subdirectory: `output/run_{DD_MM_HH_MM}/`.
-- Output assets created per run:
+- Running `run_pipeline.py` executes 7 optimizers (EBGWO, PSO, CLPSO, APSO, LAPSO, ACOR, CIAC) across 6 selection strategies + Full Universe.
+- Creates a timestamped subdirectory: `output/run_{DD_MM_HH_MM}/`.
+- Output assets created per run in the main folder:
   - `pipeline.log`: Execution log.
-  - `convergence.png`: Optimization convergence chart.
-  - `performance.png` / `performance_2025.png`: Performance charts.
-  - `performance_report.md`: Markdown report table.
-  - `candles/`: Subfolder containing strategy-wise candlestick grid charts (`candles/*.png`).
+  - `convergence.png`, `performance.png`, `performance_2025.png`: Combined charts.
+  - `performance_report.md`: Combined performance report.
+  - `selections/`: Folder containing strategy asset list CSVs.
+  - `candles/`: Subfolder containing candlestick grid charts.
+- Subdirectories per optimizer are created (`output/run_{DD_MM_HH_MM}/{optimizer_name}/`) containing optimizer-specific reports and plots (`performance_report.md`, `convergence.png`, `performance.png`, `performance_2025.png`).
+- Dedicated run scripts exist for individual optimizers:
+  - `run_pipeline_aco_ebgwo.py`
+  - `run_pipeline_pso.py`
+  - `run_pipeline_clpso.py`
+  - `run_pipeline_apso.py`
+  - `run_pipeline_lapso.py`
+  - `run_pipeline_acor.py`
+  - `run_pipeline_ciac.py`

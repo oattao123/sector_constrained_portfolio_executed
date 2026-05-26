@@ -7,7 +7,15 @@ import matplotlib
 matplotlib.use("Agg")  # force non-interactive backend
 import matplotlib.pyplot as plt
 from .covariance import get_best_device, to_tensor
-from .optimizers import optimize_weights_aco_ebgwo, optimize_weights_pso
+from .optimizers import (
+    optimize_weights_aco_ebgwo,
+    optimize_weights_pso,
+    optimize_weights_clpso,
+    optimize_weights_apso,
+    optimize_weights_lapso,
+    optimize_weights_acor,
+    optimize_weights_ciac
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +54,21 @@ def compute_metrics(returns, risk_free_rate=0.0434):
 class WalkForwardBacktester:
     """Executes Walk-Forward Optimization across rolling windows."""
     
-    def __init__(self, full_returns, spy_full_returns, sector_map=None, risk_free_rate=0.0434):
+    def __init__(self, full_returns, spy_full_returns, sector_map=None, risk_free_rate=0.0434, transaction_cost_rate=0.0):
         self.full_returns = full_returns
         self.spy_full_returns = spy_full_returns
         self.sector_map = sector_map or {}
         self.risk_free_rate = risk_free_rate
+        self.transaction_cost_rate = transaction_cost_rate
         self.device = get_best_device()
         
     def run(self, portfolio_name, selected_stocks, lookback_window=252*3, step_size=21*3,
             num_iterations=1000, num_agents=500, use_sector_constraints=False,
-            optimizer='aco_ebgwo', **optimizer_kwargs):
+            optimizer='aco_ebgwo', transaction_cost_rate=None, **optimizer_kwargs):
         """Runs rolling window Walk-Forward optimization."""
         logger.info(f"[{portfolio_name}] Starting Walk-Forward Backtest...")
+        
+        cost_rate = transaction_cost_rate if transaction_cost_rate is not None else self.transaction_cost_rate
         
         valid_stocks = [t for t in selected_stocks if t in self.full_returns.columns]
         if not valid_stocks:
@@ -78,8 +89,11 @@ class WalkForwardBacktester:
             sector_labels_tensor = torch.tensor(sector_ids, dtype=torch.int64, device=self.device)
             
         out_of_sample_returns = []
+        out_of_sample_returns_no_cost = []
         all_best_conv = []
         all_avg_conv = []
+        
+        prev_weights = np.zeros(len(valid_stocks))
         
         for start_idx in range(0, total_days - lookback_window, step_size):
             train_end = start_idx + lookback_window
@@ -93,6 +107,46 @@ class WalkForwardBacktester:
             # Dispatch optimizer
             if optimizer == 'pso':
                 best_weights, conv_b, conv_a = optimize_weights_pso(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'clpso':
+                best_weights, conv_b, conv_a = optimize_weights_clpso(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'apso':
+                best_weights, conv_b, conv_a = optimize_weights_apso(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'lapso':
+                best_weights, conv_b, conv_a = optimize_weights_lapso(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'acor':
+                best_weights, conv_b, conv_a = optimize_weights_acor(
+                    train_returns_gpu=train_returns,
+                    num_particles=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'ciac':
+                best_weights, conv_b, conv_a = optimize_weights_ciac(
                     train_returns_gpu=train_returns,
                     num_particles=num_agents,
                     iterations=num_iterations,
@@ -115,11 +169,29 @@ class WalkForwardBacktester:
             
             test_returns_cpu = port_returns.iloc[train_end:test_end].values
             period_returns = (test_returns_cpu * best_weights).sum(axis=1)
+            
+            # Copy period returns for no-cost calculation
+            period_returns_no_cost = period_returns.copy()
+            
+            # Apply transaction costs
+            if cost_rate > 0.0:
+                turnover = np.sum(np.abs(best_weights - prev_weights))
+                cost = turnover * cost_rate
+                if len(period_returns) > 0:
+                    period_returns[0] = (1.0 + period_returns[0]) * (1.0 - cost) - 1.0
+                logger.info(f"  Window starting {port_returns.index[train_end].date()}: turnover={turnover:.4f}, cost={cost:.4f}")
+                
+            prev_weights = best_weights.copy()
+            
             out_of_sample_returns.extend(period_returns)
+            out_of_sample_returns_no_cost.extend(period_returns_no_cost)
             
         # Compute metrics
         port_returns_arr = np.array(out_of_sample_returns)
         metrics = compute_metrics(port_returns_arr, self.risk_free_rate)
+        
+        port_returns_arr_no_cost = np.array(out_of_sample_returns_no_cost)
+        metrics_no_cost = compute_metrics(port_returns_arr_no_cost, self.risk_free_rate)
         
         # Compute average convergence curves
         max_len = max([len(c) for c in all_best_conv]) if all_best_conv else 0
@@ -145,6 +217,15 @@ class WalkForwardBacktester:
             "Max Drawdown": metrics["max_dd"],
             "OOS_Returns_Array": port_returns_arr,
             "OOS_Cum_Returns_Array": metrics["cum_returns_arr"],
+            
+            "Cum Return (No Cost)": metrics_no_cost["cum_return"],
+            "Ann Return (No Cost)": metrics_no_cost["ann_return"],
+            "Ann Volatility (No Cost)": metrics_no_cost["ann_vol"],
+            "Sharpe Ratio (No Cost)": metrics_no_cost["sharpe"],
+            "Max Drawdown (No Cost)": metrics_no_cost["max_dd"],
+            "OOS_Returns_Array_No_Cost": port_returns_arr_no_cost,
+            "OOS_Cum_Returns_Array_No_Cost": metrics_no_cost["cum_returns_arr"],
+            
             "Avg_Best_Convergence": avg_best_conv,
             "Avg_Avg_Convergence": avg_avg_conv,
             "Dates": trade_dates
