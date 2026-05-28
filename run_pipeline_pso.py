@@ -92,6 +92,19 @@ def run_backtest_with_trials(backtester, portfolio_name, selected_stocks, trials
     avg_best_conv = np.mean([r["Avg_Best_Convergence"] for r in trial_results], axis=0)
     avg_avg_conv = np.mean([r["Avg_Avg_Convergence"] for r in trial_results], axis=0)
     
+    # Average the weights across trials
+    avg_rebalance_history = []
+    if trial_results and "Rebalance_History" in trial_results[0]:
+        num_rebalance_dates = len(trial_results[0]["Rebalance_History"])
+        for idx in range(num_rebalance_dates):
+            date_str = trial_results[0]["Rebalance_History"][idx]["date"]
+            all_trial_weights = [r["Rebalance_History"][idx]["weights"] for r in trial_results]
+            mean_weights = np.mean(all_trial_weights, axis=0)
+            avg_rebalance_history.append({
+                "date": date_str,
+                "weights": mean_weights
+            })
+
     return {
         "Strategy": portfolio_name,
         "Cum Return": np.mean(cums),
@@ -126,6 +139,8 @@ def run_backtest_with_trials(backtester, portfolio_name, selected_stocks, trials
         "Avg_Best_Convergence": avg_best_conv,
         "Avg_Avg_Convergence": avg_avg_conv,
         "Dates": trial_results[0]["Dates"],
+        "Rebalance_History": avg_rebalance_history,
+        "Tickers": trial_results[0]["Tickers"] if trial_results else [],
         "trial_results": trial_results
     }
 
@@ -443,6 +458,16 @@ def main():
         output_path=os.path.join(out_dir, "performance_report.md"),
     )
 
+    # 9b. Save average optimized weights for all strategies in the main run directory
+    weights_dir = os.path.join(out_dir, "weights")
+    for r in all_results:
+        save_weights_to_csv(r, weights_dir)
+
+    # 9b. Save average optimized weights for all strategies in the main run directory
+    weights_dir = os.path.join(out_dir, "weights")
+    for r in all_results:
+        save_weights_to_csv(r, weights_dir)
+
     logger.info("Pipeline executed successfully nya~! (=^･ω･^=)")
 
 
@@ -561,6 +586,29 @@ def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=Non
                 f"| *{spy_res_25['Strategy']}* | *N/A (No Cost)* | {spy_res_25['Cum Return']:.2%} | {spy_res_25['Ann Return']:.2%} | {spy_vol_25:.2%} | {spy_sharpe_25:.4f} | {spy_max_dd_25:.2%} |\n"
             )
     logger.info(f"Saved performance report to {output_path}")
+
+
+def save_weights_to_csv(result, output_dir):
+    """Saves average optimized weights of a strategy to a CSV file."""
+    if "Rebalance_History" not in result or not result["Rebalance_History"]:
+        return
+    
+    os.makedirs(output_dir, exist_ok=True)
+    strategy_name_clean = result["Strategy"].lower().replace(" ", "_").replace("(", "").replace(")", "")
+    filename = f"{strategy_name_clean}_weights.csv"
+    filepath = os.path.join(output_dir, filename)
+    
+    tickers = result["Tickers"]
+    history = result["Rebalance_History"]
+    
+    # Construct a DataFrame where index is Date, and columns are Tickers
+    dates = [h["date"] for h in history]
+    weights_data = [h["weights"] for h in history]
+    
+    df = pd.DataFrame(weights_data, index=dates, columns=tickers)
+    df.index.name = "Date"
+    df.to_csv(filepath)
+    logger.info(f"Saved optimized weights to {filepath}")
 
 
 if __name__ == "__main__":

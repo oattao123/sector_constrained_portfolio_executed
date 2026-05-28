@@ -9,8 +9,9 @@ from .selectors import (
     select_by_aco_cluster
 )
 from .optimizers import (
-    optimize_weights_ebgwo_monte_carlo_entropy,
+    optimize_weights_ebgwo,
     optimize_weights_aco_ebgwo,
+    optimize_weights_aco_ciac,
     optimize_weights_pso,
     optimize_weights_clpso,
     optimize_weights_apso,
@@ -21,3 +22,4 @@ from .optimizers import (
 from .backtest import WalkForwardBacktester, compute_metrics, save_convergence_plot, save_performance_plot, save_performance_plot_2025
 from .cli import print_welcome, print_asset_summary, print_selection_summary, print_backtest_table
 from .charts import save_candlestick_grid
+from .reports import generate_grouped_plots_and_report

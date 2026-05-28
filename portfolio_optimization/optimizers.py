@@ -6,7 +6,7 @@ from .covariance import ledoit_wolf_covariance_gpu_dynamic, to_tensor, get_best_
 
 logger = logging.getLogger(__name__)
 
-def optimize_weights_ebgwo_monte_carlo_entropy(train_returns_gpu, max_weight=0.1, lambda_ent=0.00,
+def optimize_weights_ebgwo(train_returns_gpu, max_weight=0.1, lambda_ent=0.00,
                                                num_wolves=500, iterations=1000, return_convergence=False,
                                                **kwargs):
     """
@@ -17,12 +17,16 @@ def optimize_weights_ebgwo_monte_carlo_entropy(train_returns_gpu, max_weight=0.1
     device = train_returns_gpu.device
     RISK_FREE_RATE = 0.0434
 
+    # 1. Precompute Mean Returns and Ledoit-Wolf Covariance Matrix (No Monte Carlo Simulation)
+    mean_returns = train_returns_gpu.mean(dim=0)
+    shrunk_cov, _, _ = ledoit_wolf_covariance_gpu_dynamic(train_returns_gpu)
+
     # log_n prevents division by zero
     log_n = math.log(num_assets) if num_assets > 1 else 1.0
     ST = 0.4
     eps = 1e-10
 
-    # 1. Initialize Wolves (Population)
+    # 2. Initialize Wolves (Population)
     wolves = torch.rand((num_wolves, num_assets), dtype=torch.float32, device=device)
     wolves = wolves / wolves.sum(dim=1, keepdim=True)
 
@@ -33,16 +37,10 @@ def optimize_weights_ebgwo_monte_carlo_entropy(train_returns_gpu, max_weight=0.1
     convergence_avg = []
 
     for iteration in range(iterations):
-        # MONTE CARLO SIMULATION (Bootstrapping)
-        mc_indices = torch.randint(0, num_days, (num_days,), device=device)
-        mc_returns = train_returns_gpu[mc_indices]
-
         # 1. Portfolio Return
-        mc_mean_returns = mc_returns.mean(dim=0)
-        port_ann_return = torch.matmul(wolves, mc_mean_returns) * 252
+        port_ann_return = torch.matmul(wolves, mean_returns) * 252
 
         # 2. Portfolio Volatility using Ledoit-Wolf
-        shrunk_cov, _, _ = ledoit_wolf_covariance_gpu_dynamic(mc_returns)
         port_variance = torch.sum(wolves * torch.matmul(wolves, shrunk_cov), dim=1)
         port_ann_vol = torch.sqrt(port_variance * 252)
 
@@ -148,7 +146,7 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
     pheromones = torch.ones(num_assets, dtype=torch.float32, device=device)
 
     # EBGWO Initialization
-    wolves = torch.rand((num_agents, target_assets), dtype=torch.float32, device=device)
+    wolves = torch.rand((num_agents, num_assets), dtype=torch.float32, device=device)
     wolves = wolves / wolves.sum(dim=1, keepdim=True)
 
     stagnation_counter = 0
@@ -212,10 +210,15 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
 
         decorrelation_fitness = 1.0 - avg_pairwise_corr
 
+        # Apply ACO selection mask to full-universe wolves and normalize
         mask = torch.zeros((num_agents, num_assets), device=device)
-        mask.scatter_(1, selected_indices, wolves)
+        mask.scatter_(1, selected_indices, 1.0)
 
-        portfolio_returns = torch.matmul(train_returns_gpu, mask.T)
+        masked_wolves = wolves * mask
+        sums = masked_wolves.sum(dim=1, keepdim=True)
+        masked_wolves = torch.where(sums > 0, masked_wolves / sums, masked_wolves)
+
+        portfolio_returns = torch.matmul(train_returns_gpu, masked_wolves.T)
         port_ann_return = portfolio_returns.mean(dim=0) * 252
         port_ann_vol = portfolio_returns.std(dim=0, unbiased=True) * sqrt_252
 
@@ -223,7 +226,7 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
                                       (port_ann_return - RISK_FREE_RATE) / port_ann_vol,
                                       torch.zeros_like(port_ann_return))
 
-        unified_fitness = portfolio_sharpe * decorrelation_fitness
+        unified_fitness = portfolio_sharpe
 
         # 3. Global Best Tracking & Stagnation Check
         sorted_indices = torch.argsort(unified_fitness, descending=True)
@@ -235,26 +238,13 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
         if iter_best_fitness > global_best_fitness:
             global_best_fitness = iter_best_fitness
             global_best_portfolio = selected_indices[best_agent_idx].clone()
-            global_best_weights = wolves[best_agent_idx].clone()
+            global_best_weights = masked_wolves[best_agent_idx].clone()
             stagnation_counter = 0
         else:
             stagnation_counter += 1
 
         convergence_curve.append(global_best_fitness)
         avg_convergence_curve.append(avg_fitness)
-
-        # 4. Escape Mechanism
-        if stagnation_counter > patience:
-            mean_pheromone = pheromones.mean().item()
-            pheromones = torch.ones_like(pheromones) * mean_pheromone
-
-            num_reset = num_agents // 2
-            reset_indices = sorted_indices[-num_reset:]
-            new_random_wolves = torch.rand((num_reset, target_assets), dtype=torch.float32, device=device)
-            new_random_wolves = new_random_wolves / new_random_wolves.sum(dim=1, keepdim=True)
-            wolves[reset_indices] = new_random_wolves
-
-            stagnation_counter = 0
 
         # 5. Updates (ACO & EBGWO)
         pheromones *= (1 - evaporation_rate)
@@ -293,11 +283,10 @@ def optimize_weights_aco_ebgwo(train_returns_gpu, target_assets, heuristic_tenso
         sums = new_wolves.sum(dim=1, keepdim=True)
         wolves = torch.where(sums > 0, new_wolves / sums, wolves)
 
-    final_full_weights = torch.zeros(num_assets, device=device)
-    if global_best_portfolio is not None and global_best_weights is not None:
-        final_full_weights[global_best_portfolio] = global_best_weights
-
-    return final_full_weights.cpu().numpy(), convergence_curve, avg_convergence_curve
+    if global_best_weights is not None:
+        return global_best_weights.cpu().numpy(), convergence_curve, avg_convergence_curve
+    else:
+        return torch.zeros(num_assets).numpy(), convergence_curve, avg_convergence_curve
 
 
 def optimize_weights_pso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
@@ -544,6 +533,8 @@ def optimize_weights_clpso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
 def optimize_weights_apso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
                            num_particles=500, iterations=1000,
+                           w_init=0.9, c1_init=2.0, c2_init=2.0,
+                           weight_penalty_coef=100.0,
                            return_convergence=False, **kwargs):
     """
     Adaptive Particle Swarm Optimization (APSO) using Evolutionary State Estimation (ESE)
@@ -576,10 +567,10 @@ def optimize_weights_apso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
     shrunk_cov, _, _ = ledoit_wolf_covariance_gpu_dynamic(train_returns_gpu)
     mean_returns = train_returns_gpu.mean(dim=0)
 
-    # Initial control parameters
-    w = 0.9
-    c1 = 2.0
-    c2 = 2.0
+    # Initial control parameters (tunable)
+    w  = w_init
+    c1 = c1_init
+    c2 = c2_init
 
     for iteration in range(iterations):
         # ── Fitness evaluation ────────────────────────────────────────────────
@@ -590,7 +581,7 @@ def optimize_weights_apso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
         entropy = -torch.sum(positions * torch.log(positions + eps), dim=1)
         norm_entropy = entropy / log_n
-        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * 100.0
+        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * weight_penalty_coef
         fitness = sharpe + lambda_ent * norm_entropy - weight_penalty
 
         # ── Update personal & global bests ───────────────────────────────────
@@ -678,6 +669,8 @@ def optimize_weights_apso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 def optimize_weights_lapso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
                            num_particles=500, iterations=1000,
                            w_start=0.9, w_end=0.4,
+                           c1_base=1.5, c2_base=2.5,
+                           weight_penalty_coef=100.0,
                            return_convergence=False, **kwargs):
     """
     Landscape-Aware Adaptive Particle Swarm Optimization (LAPSO) for portfolio weight allocation.
@@ -722,7 +715,7 @@ def optimize_weights_lapso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
         entropy = -torch.sum(positions * torch.log(positions + eps), dim=1)
         norm_entropy = entropy / log_n
-        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * 100.0
+        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * weight_penalty_coef
         fitness = sharpe + lambda_ent * norm_entropy - weight_penalty
 
         # ── Update personal & global bests ───────────────────────────────────
@@ -769,8 +762,8 @@ def optimize_weights_lapso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
         w = w_end + (w_start - w_end) * L_m_val
         w = max(w_end, min(w_start, w))
 
-        c1 = 1.5 + L_m_val
-        c2 = 2.5 - L_m_val
+        c1 = c1_base + L_m_val          # tunable base: exploration bias
+        c2 = c2_base - L_m_val          # tunable base: exploitation bias
 
         # ── Velocity update ───────────────────────────────────────────────────
         r1 = torch.rand_like(velocities)
@@ -807,10 +800,11 @@ def optimize_weights_lapso(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 def optimize_weights_acor(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
                           num_particles=500, iterations=1000,
                           archive_size=50, q_param=0.1, xi_param=0.8,
+                          weight_penalty_coef=100.0,
                           return_convergence=False, **kwargs):
     """
     Ant Colony Optimization for Continuous Domains (ACO_R) for portfolio weight allocation.
-    
+
     archive_size : size of solution archive (k)
     q_param      : controls search focus (smaller q -> more focus on best solutions)
     xi_param     : learning rate / decay param (similar to evaporation rate)
@@ -837,7 +831,7 @@ def optimize_weights_acor(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
     entropy = -torch.sum(archive_pos * torch.log(archive_pos + eps), dim=1)
     norm_entropy = entropy / log_n
-    weight_penalty = torch.sum(torch.relu(archive_pos - max_weight), dim=1) * 100.0
+    weight_penalty = torch.sum(torch.relu(archive_pos - max_weight), dim=1) * weight_penalty_coef
     archive_fit = sharpe + lambda_ent * norm_entropy - weight_penalty
 
     # Sort archive in descending order of fitness
@@ -888,7 +882,7 @@ def optimize_weights_acor(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
         entropy = -torch.sum(new_pos * torch.log(new_pos + eps), dim=1)
         norm_entropy = entropy / log_n
-        weight_penalty = torch.sum(torch.relu(new_pos - max_weight), dim=1) * 100.0
+        weight_penalty = torch.sum(torch.relu(new_pos - max_weight), dim=1) * weight_penalty_coef
         new_fit = sharpe + lambda_ent * norm_entropy - weight_penalty
 
         # ── Update Archive ───────────────────────────────────────────────────
@@ -909,13 +903,14 @@ def optimize_weights_acor(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
     return best_weights
 
 
-def optimize_weights_ciac(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
+def optimize_weights_ciac(train_returns_gpu, max_weight=0.1, lambda_ent=0.00,
                           num_particles=500, iterations=1000,
                           archive_size=30, c_stig=0.5, c_dir=0.3, c_rand=0.2,
-                          evap_rate=0.1, return_convergence=False, **kwargs):
+                          evap_rate=0.1, weight_penalty_coef=100.0,
+                          return_convergence=False, **kwargs):
     """
     Continuous Interacting Ant Colony (CIAC) for portfolio weight allocation.
-    
+
     archive_size : size of pheromone spots archive (historically best positions)
     c_stig       : weight for indirect (stigmergic) attraction to pheromone spots
     c_dir        : weight for direct interaction attraction to superior ants
@@ -960,7 +955,7 @@ def optimize_weights_ciac(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
 
         entropy = -torch.sum(positions * torch.log(positions + eps), dim=1)
         norm_entropy = entropy / log_n
-        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * 100.0
+        weight_penalty = torch.sum(torch.relu(positions - max_weight), dim=1) * weight_penalty_coef
         fitness = sharpe + lambda_ent * norm_entropy - weight_penalty
 
         # ── Update Global Best ───────────────────────────────────────────────
@@ -1029,3 +1024,214 @@ def optimize_weights_ciac(train_returns_gpu, max_weight=0.1, lambda_ent=0.05,
     if return_convergence:
         return best_weights, convergence_best, convergence_avg
     return best_weights
+
+
+def optimize_weights_aco_ciac(train_returns_gpu, target_assets, heuristic_tensor=None, sector_labels=None,
+                              num_iterations=2000, num_agents=500,
+                              alpha_aco=1.0, beta_aco=2.0, evaporation_rate=0.1, Q=1.0,
+                              PHEROMONE_MIN=0.1, PHEROMONE_MAX=10.0, patience=300,
+                              archive_size=30, c_stig=0.5, c_dir=0.3, c_rand=0.2,
+                              evap_rate_ciac=0.1, **kwargs):
+    """
+    Co-Evolutionary Optimization: ACO (Asset Selection) + CIAC (Weight Allocation)
+    Returns: (weights_numpy, convergence_best_list, convergence_avg_list)
+    """
+    device = train_returns_gpu.device
+    num_days, num_assets = train_returns_gpu.shape
+    RISK_FREE_RATE = 0.0434
+    actual_archive_size = min(archive_size, num_agents)
+
+    # 1. Prepare Correlation Matrix
+    mean_returns = train_returns_gpu.mean(dim=0, keepdim=True)
+    centered_returns = train_returns_gpu - mean_returns
+    cov_matrix = torch.matmul(centered_returns.T, centered_returns) / (num_days - 1)
+    std_dev = torch.sqrt(torch.diag(cov_matrix))
+    std_dev = torch.clamp(std_dev, min=1e-8)
+    full_corr_tensor = cov_matrix / torch.outer(std_dev, std_dev)
+    full_corr_tensor = torch.clamp(full_corr_tensor, -1.0, 1.0)
+
+    # 2. Handle Heuristics & Sectors
+    if heuristic_tensor is None:
+        train_ann_ret = train_returns_gpu.mean(dim=0) * 252
+        train_ann_vol = train_returns_gpu.std(dim=0) * math.sqrt(252)
+        train_ann_vol = torch.clamp(train_ann_vol, min=1e-8)
+        heuristic_tensor = torch.clamp(train_ann_ret / train_ann_vol, min=0.01)
+
+    if sector_labels is None:
+        sector_labels = torch.zeros(num_assets, dtype=torch.int64, device=device)
+        unique_sectors = [0]
+        min_per_sector = 0
+    else:
+        unique_sectors = torch.unique(sector_labels).tolist()
+        min_per_sector = 1
+
+    # Pheromones Initialization
+    pheromones = torch.ones(num_assets, dtype=torch.float32, device=device)
+
+    # CIAC Initialization
+    positions = torch.rand((num_agents, num_assets), dtype=torch.float32, device=device)
+    positions = positions / positions.sum(dim=1, keepdim=True)
+    velocities = torch.zeros_like(positions)
+
+    # Spots Initialization
+    spots_pos = positions[:actual_archive_size].clone()
+    spots_tau = torch.zeros(actual_archive_size, dtype=torch.float32, device=device)
+
+    stagnation_counter = 0
+    sqrt_252 = torch.tensor(math.sqrt(252), dtype=torch.float32, device=device)
+    global_best_fitness = -float('inf')
+    global_best_portfolio = None
+    global_best_weights = None
+
+    convergence_curve = []
+    avg_convergence_curve = []
+    sigma = 0.1
+    eps = 1e-10
+
+    for iteration in range(num_iterations):
+        # 1. ACO: Asset Selection Phase
+        probabilities = (pheromones ** alpha_aco) * (heuristic_tensor ** beta_aco)
+        probabilities = probabilities / probabilities.sum()
+        probs_batch = probabilities.unsqueeze(0).expand(num_agents, -1)
+
+        probs_remaining = probs_batch.clone()
+        mandatory_selections = []
+
+        for sector_idx in unique_sectors:
+            sector_mask = (sector_labels == sector_idx).float()
+            probs_sector = probs_remaining * sector_mask.unsqueeze(0)
+
+            epsilon = 1e-8
+            probs_sector = probs_sector + (sector_mask.unsqueeze(0) * epsilon)
+
+            available_in_sector = int(sector_mask.sum().item())
+            actual_req = min(min_per_sector, available_in_sector)
+
+            if actual_req > 0:
+                selected_s = torch.multinomial(probs_sector, actual_req, replacement=False)
+                mandatory_selections.append(selected_s)
+                probs_remaining.scatter_(1, selected_s, 0.0)
+
+        if mandatory_selections:
+            selected_mandatory = torch.cat(mandatory_selections, dim=1)
+        else:
+            selected_mandatory = torch.empty((num_agents, 0), dtype=torch.int64, device=device)
+
+        num_mandatory = selected_mandatory.shape[1]
+        num_remaining = target_assets - num_mandatory
+
+        if num_remaining > 0:
+            selected_rem = torch.multinomial(probs_remaining, num_remaining, replacement=False)
+            selected_indices = torch.cat([selected_mandatory, selected_rem], dim=1)
+        else:
+            selected_indices = selected_mandatory[:, :target_assets]
+
+        # 2. Unified Fitness Calculation
+        idx_row = selected_indices.unsqueeze(2)
+        idx_col = selected_indices.unsqueeze(1)
+        batch_corr_matrices = full_corr_tensor[idx_row, idx_col]
+        sum_corrs = batch_corr_matrices.sum(dim=(1, 2))
+
+        if target_assets > 1:
+            avg_pairwise_corr = (sum_corrs - target_assets) / (target_assets * (target_assets - 1))
+        else:
+            avg_pairwise_corr = torch.ones_like(sum_corrs)
+
+        decorrelation_fitness = 1.0 - avg_pairwise_corr
+
+        # Apply ACO selection mask to full-universe positions and normalize
+        mask = torch.zeros((num_agents, num_assets), device=device)
+        mask.scatter_(1, selected_indices, 1.0)
+
+        masked_positions = positions * mask
+        sums = masked_positions.sum(dim=1, keepdim=True)
+        masked_positions = torch.where(sums > 0, masked_positions / sums, masked_positions)
+
+        portfolio_returns = torch.matmul(train_returns_gpu, masked_positions.T)
+        port_ann_return = portfolio_returns.mean(dim=0) * 252
+        port_ann_vol = portfolio_returns.std(dim=0, unbiased=True) * sqrt_252
+
+        portfolio_sharpe = torch.where(port_ann_vol > 0,
+                                      (port_ann_return - RISK_FREE_RATE) / port_ann_vol,
+                                      torch.zeros_like(port_ann_return))
+
+        unified_fitness = portfolio_sharpe
+
+        # 3. Global Best Tracking & Stagnation Check
+        sorted_indices = torch.argsort(unified_fitness, descending=True)
+        best_agent_idx = sorted_indices[0]
+        iter_best_fitness = unified_fitness[best_agent_idx].item()
+
+        avg_fitness = unified_fitness.mean().item()
+
+        if iter_best_fitness > global_best_fitness:
+            global_best_fitness = iter_best_fitness
+            global_best_portfolio = selected_indices[best_agent_idx].clone()
+            global_best_weights = masked_positions[best_agent_idx].clone()
+            stagnation_counter = 0
+        else:
+            stagnation_counter += 1
+
+        convergence_curve.append(global_best_fitness)
+        avg_convergence_curve.append(avg_fitness)
+
+        # 5. Updates (ACO & CIAC)
+        pheromones *= (1 - evaporation_rate)
+        pheromones[selected_indices[best_agent_idx]] += Q * iter_best_fitness
+        pheromones = torch.clamp(pheromones, PHEROMONE_MIN, PHEROMONE_MAX)
+
+        # 6. CIAC Position updates
+        combined_pos = torch.cat([spots_pos, positions], dim=0)
+        combined_fit = torch.cat([spots_tau, unified_fitness], dim=0)
+
+        sorted_idx = torch.argsort(combined_fit, descending=True)
+        spots_pos = combined_pos[sorted_idx[:actual_archive_size]].clone()
+        spots_tau = combined_fit[sorted_idx[:actual_archive_size]].clone()
+        spots_tau = (1.0 - evap_rate_ciac) * spots_tau
+
+        min_tau = spots_tau.min()
+        max_tau = spots_tau.max()
+        if max_tau > min_tau:
+            norm_tau = (spots_tau - min_tau) / (max_tau - min_tau + eps)
+        else:
+            norm_tau = torch.ones_like(spots_tau)
+
+        # 1. Stigmergy Attraction
+        diff_spots = spots_pos.unsqueeze(1) - positions.unsqueeze(0)
+        dist_sq_spots = torch.sum(diff_spots ** 2, dim=-1)
+        weights_spots = norm_tau.unsqueeze(1) * torch.exp(-dist_sq_spots / (2.0 * (sigma ** 2) + eps))
+        dx_stig = torch.sum(weights_spots.unsqueeze(-1) * diff_spots, dim=0)
+
+        # 2. Direct Interaction
+        diff_ants = positions.unsqueeze(0) - positions.unsqueeze(1)
+        dist_sq_ants = torch.sum(diff_ants ** 2, dim=-1)
+        better_mask = unified_fitness.unsqueeze(1) > unified_fitness.unsqueeze(0)
+        weights_ants = better_mask.float() * torch.exp(-dist_sq_ants / (2.0 * (sigma ** 2) + eps))
+        dx_direct = torch.sum(weights_ants.unsqueeze(-1) * diff_ants, dim=0)
+
+        # 3. Random Exploration Walk
+        dx_rand = torch.randn_like(positions) * sigma
+
+        # Combine velocities & update positions
+        velocities = c_stig * dx_stig + c_dir * dx_direct + c_rand * dx_rand
+        positions = positions + velocities
+
+        # Mirrored Boundary Handling & Simplex Projection
+        below_mask = positions < 0.0
+        positions = torch.where(below_mask, -positions, positions)
+        velocities = torch.where(below_mask, -velocities, velocities)
+
+        above_mask = positions > 1.0
+        positions = torch.where(above_mask, 2.0 - positions, positions)
+        velocities = torch.where(above_mask, -velocities, velocities)
+
+        positions = positions.clamp(0.0, 1.0)
+        sums = positions.sum(dim=1, keepdim=True)
+        positions = torch.where(sums > 0, positions / sums, positions)
+
+        sigma = max(1e-4, sigma * 0.99)
+
+    if global_best_weights is not None:
+        return global_best_weights.cpu().numpy(), convergence_curve, avg_convergence_curve
+    else:
+        return torch.zeros(num_assets).numpy(), convergence_curve, avg_convergence_curve

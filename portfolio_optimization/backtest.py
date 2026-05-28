@@ -8,7 +8,9 @@ matplotlib.use("Agg")  # force non-interactive backend
 import matplotlib.pyplot as plt
 from .covariance import get_best_device, to_tensor
 from .optimizers import (
+    optimize_weights_ebgwo,
     optimize_weights_aco_ebgwo,
+    optimize_weights_aco_ciac,
     optimize_weights_pso,
     optimize_weights_clpso,
     optimize_weights_apso,
@@ -92,6 +94,7 @@ class WalkForwardBacktester:
         out_of_sample_returns_no_cost = []
         all_best_conv = []
         all_avg_conv = []
+        rebalance_history = []
         
         prev_weights = np.zeros(len(valid_stocks))
         
@@ -105,7 +108,15 @@ class WalkForwardBacktester:
             train_returns = returns_gpu_full[start_idx:train_end]
             
             # Dispatch optimizer
-            if optimizer == 'pso':
+            if optimizer in ('ebgwo', 'EBGWO'):
+                best_weights, conv_b, conv_a = optimize_weights_ebgwo(
+                    train_returns_gpu=train_returns,
+                    num_wolves=num_agents,
+                    iterations=num_iterations,
+                    return_convergence=True,
+                    **optimizer_kwargs
+                )
+            elif optimizer == 'pso':
                 best_weights, conv_b, conv_a = optimize_weights_pso(
                     train_returns_gpu=train_returns,
                     num_particles=num_agents,
@@ -153,6 +164,16 @@ class WalkForwardBacktester:
                     return_convergence=True,
                     **optimizer_kwargs
                 )
+            elif optimizer in ('aco_ciac', 'ACO_CIAC'):
+                best_weights, conv_b, conv_a = optimize_weights_aco_ciac(
+                    train_returns_gpu=train_returns,
+                    target_assets=target_assets_count,
+                    heuristic_tensor=None,
+                    sector_labels=sector_labels_tensor,
+                    num_iterations=num_iterations,
+                    num_agents=num_agents,
+                    **optimizer_kwargs
+                )
             else:  # default: aco_ebgwo
                 best_weights, conv_b, conv_a = optimize_weights_aco_ebgwo(
                     train_returns_gpu=train_returns,
@@ -166,6 +187,10 @@ class WalkForwardBacktester:
             
             all_best_conv.append(conv_b)
             all_avg_conv.append(conv_a)
+            rebalance_history.append({
+                "date": port_returns.index[train_end].strftime("%Y-%m-%d"),
+                "weights": best_weights.copy()
+            })
             
             test_returns_cpu = port_returns.iloc[train_end:test_end].values
             period_returns = (test_returns_cpu * best_weights).sum(axis=1)
@@ -228,7 +253,9 @@ class WalkForwardBacktester:
             
             "Avg_Best_Convergence": avg_best_conv,
             "Avg_Avg_Convergence": avg_avg_conv,
-            "Dates": trade_dates
+            "Dates": trade_dates,
+            "Rebalance_History": rebalance_history,
+            "Tickers": list(valid_stocks)
         }
 
 def save_convergence_plot(results_list, output_path="convergence.png"):

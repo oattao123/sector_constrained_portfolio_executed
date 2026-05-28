@@ -21,8 +21,10 @@ Implement continuous domain and adaptive optimizers (LAPSO, ACOR, CIAC), integra
 - [x] Fix index out of bounds error in CIAC optimizer when particle count < archive size by dynamically clamping archive size
 - [x] Create dedicated run script `run_pipeline_ciac.py`
 - [x] Integrate LAPSO, ACOR, and CIAC into `portfolio_optimization/backtest.py` dispatch
+- [x] Save weight optimization results (average optimized asset weights per rebalancing date) as CSV files inside the output run and optimizer-specific folders
 - [x] Integrate LAPSO, ACOR, and CIAC comparisons in the main `run_pipeline.py` pipeline (totaling 7 optimizers evaluated on all 6 selection strategies + full universe)
 - [x] Configure main pipeline to save optimizer-specific subdirectories containing reports + convergence/performance plots for each optimizer
+- [x] Update `tune_pipeline.py` to support selecting and tuning all 7 optimizers (by adding `--optimizer` option and passing it to the backtester)
 - [x] Verify all pipelines (main, EBGWO, PSO, CLPSO, APSO, LAPSO, ACOR, and CIAC) with fast test runs
 - [x] Update English and Thai manuals (`manual.md`, `manual_TH.md`) to document all new optimizers, parameter details, run commands, and pipeline reports
 

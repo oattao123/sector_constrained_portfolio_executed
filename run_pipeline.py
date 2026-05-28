@@ -34,6 +34,7 @@ from portfolio_optimization import (
     select_by_hrp_div,
     select_by_hrp_sharpe,
     select_by_lw_diversification,
+    generate_grouped_plots_and_report,
 )
 
 warnings.filterwarnings("ignore")
@@ -96,6 +97,19 @@ def run_backtest_with_trials(backtester, portfolio_name, selected_stocks, trials
     avg_best_conv = np.mean([r["Avg_Best_Convergence"] for r in trial_results], axis=0)
     avg_avg_conv = np.mean([r["Avg_Avg_Convergence"] for r in trial_results], axis=0)
 
+    # Average the weights across trials
+    avg_rebalance_history = []
+    if trial_results and "Rebalance_History" in trial_results[0]:
+        num_rebalance_dates = len(trial_results[0]["Rebalance_History"])
+        for idx in range(num_rebalance_dates):
+            date_str = trial_results[0]["Rebalance_History"][idx]["date"]
+            all_trial_weights = [r["Rebalance_History"][idx]["weights"] for r in trial_results]
+            mean_weights = np.mean(all_trial_weights, axis=0)
+            avg_rebalance_history.append({
+                "date": date_str,
+                "weights": mean_weights
+            })
+
     return {
         "Strategy": portfolio_name,
         "Cum Return": np.mean(cums),
@@ -130,6 +144,8 @@ def run_backtest_with_trials(backtester, portfolio_name, selected_stocks, trials
         "Avg_Best_Convergence": avg_best_conv,
         "Avg_Avg_Convergence": avg_avg_conv,
         "Dates": trial_results[0]["Dates"],
+        "Rebalance_History": avg_rebalance_history,
+        "Tickers": trial_results[0]["Tickers"] if trial_results else [],
         "trial_results": trial_results
     }
 
@@ -310,7 +326,7 @@ def main():
             logger.warning(f"Portfolio {name} is empty. Skipping backtest.")
             continue
         tickers_list = df["Ticker"].tolist()
-        
+
         # 1. EBGWO
         logger.info(f"Running EBGWO optimization on {name}...")
         res_ebgwo = run_backtest_with_trials(
@@ -321,10 +337,10 @@ def main():
             num_iterations=args.iterations,
             num_agents=args.wolves,
             use_sector_constraints=False,
-            optimizer='aco_ebgwo',
+            optimizer='EBGWO',
         )
         all_results.append(res_ebgwo)
-        
+
         # 2. PSO
         logger.info(f"Running PSO optimization on {name}...")
         res_pso = run_backtest_with_trials(
@@ -338,7 +354,7 @@ def main():
             optimizer='pso',
         )
         all_results.append(res_pso)
-        
+
         # 3. CLPSO
         logger.info(f"Running CLPSO optimization on {name}...")
         res_clpso = run_backtest_with_trials(
@@ -352,7 +368,7 @@ def main():
             optimizer='clpso',
         )
         all_results.append(res_clpso)
-        
+
         # 4. APSO
         logger.info(f"Running APSO optimization on {name}...")
         res_apso = run_backtest_with_trials(
@@ -366,7 +382,7 @@ def main():
             optimizer='apso',
         )
         all_results.append(res_apso)
-        
+
         # 5. LAPSO
         logger.info(f"Running LAPSO optimization on {name}...")
         res_lapso = run_backtest_with_trials(
@@ -404,7 +420,6 @@ def main():
             trials=args.trials,
             num_iterations=args.iterations,
             num_agents=args.particles,
-            use_sector_constraints=False,
             optimizer='ciac',
         )
         all_results.append(res_ciac)
@@ -621,6 +636,11 @@ def main():
         output_path=os.path.join(out_dir, "performance_report.md"),
     )
 
+    # 9b. Save average optimized weights for all strategies in the main run directory
+    weights_dir = os.path.join(out_dir, "weights")
+    for r in all_results:
+        save_weights_to_csv(r, weights_dir)
+
     # 9a. Save Markdown Performance Report and Plots for each optimizer inside its subfolder
     optimizers_to_save = {
         "ebgwo": lambda name: "EBGWO" in name,
@@ -635,11 +655,11 @@ def main():
     for opt_name, filter_func in optimizers_to_save.items():
         opt_results = [r for r in all_results if filter_func(r["Strategy"])]
         opt_results_2025 = [r for r in results_2025 if filter_func(r["Strategy"])] if mask_2025.any() else None
-        
+
         # Create optimizer subfolder
         opt_dir = os.path.join(out_dir, opt_name)
         os.makedirs(opt_dir, exist_ok=True)
-        
+
         # Save performance report
         save_markdown_report(
             all_results=opt_results,
@@ -649,13 +669,13 @@ def main():
             output_path=os.path.join(opt_dir, "performance_report.md"),
             optimizer_name=opt_name,
         )
-        
+
         # Save convergence plot
         save_convergence_plot(
             opt_results,
             output_path=os.path.join(opt_dir, "convergence.png")
         )
-        
+
         # Save performance plots
         save_performance_plot(
             opt_results,
@@ -663,7 +683,7 @@ def main():
             trade_dates,
             output_path=os.path.join(opt_dir, "performance.png")
         )
-        
+
         if mask_2025.any():
             save_performance_plot_2025(
                 opt_results,
@@ -672,7 +692,24 @@ def main():
                 output_path=os.path.join(opt_dir, "performance_2025.png")
             )
 
-    logger.info("Pipeline executed successfully nya~! (=^･ω･^=)")
+        # Save weights for this specific optimizer
+        opt_weights_dir = os.path.join(opt_dir, "weights")
+        for r in opt_results:
+            save_weights_to_csv(r, opt_weights_dir)
+
+    # Generate grouped plots and report
+    try:
+        generate_grouped_plots_and_report(
+            run_dir=out_dir,
+            settings_path=args.settings,
+            assets_path=args.assets,
+            cache_path=args.cache,
+            artifact_dir=r"C:\Users\Asus\.gemini\antigravity-cli\brain\9be8b7fc-09cd-483b-96b3-781bb3fbe6ab"
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate grouped reports: {e}")
+
+    logger.info("Pipeline executed successfully nya~! (=^.w.^=)")
 
 
 def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=None, output_path="performance_report.md", optimizer_name=None):
@@ -792,6 +829,29 @@ def save_markdown_report(all_results, spy_res, results_2025=None, spy_res_25=Non
                 f"| *{spy_res_25['Strategy']}* | *N/A (No Cost)* | {spy_res_25['Cum Return']:.2%} | {spy_res_25['Ann Return']:.2%} | {spy_vol_25:.2%} | {spy_sharpe_25:.4f} | {spy_max_dd_25:.2%} |\n"
             )
     logger.info(f"Saved performance report to {output_path}")
+
+
+def save_weights_to_csv(result, output_dir):
+    """Saves average optimized weights of a strategy to a CSV file."""
+    if "Rebalance_History" not in result or not result["Rebalance_History"]:
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+    strategy_name_clean = result["Strategy"].lower().replace(" ", "_").replace("(", "").replace(")", "")
+    filename = f"{strategy_name_clean}_weights.csv"
+    filepath = os.path.join(output_dir, filename)
+
+    tickers = result["Tickers"]
+    history = result["Rebalance_History"]
+
+    # Construct a DataFrame where index is Date, and columns are Tickers
+    dates = [h["date"] for h in history]
+    weights_data = [h["weights"] for h in history]
+
+    df = pd.DataFrame(weights_data, index=dates, columns=tickers)
+    df.index.name = "Date"
+    df.to_csv(filepath)
+    logger.info(f"Saved optimized weights to {filepath}")
 
 
 if __name__ == "__main__":
